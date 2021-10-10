@@ -102,7 +102,7 @@ def main(params: Optional[SlotAttentionParams] = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Slot Attention')
     parser.add_argument('--params', type=str, default='params')
-    parser.add_argument('--epochs', type=int, default=8)
+    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--fp16', action='store_true')
     args = parser.parse_args()
     if args.params.endswith('.py'):
