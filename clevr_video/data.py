@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms
 
-from ..slot_attention.utils import compact
+from utils import compact
 
 
 class CLEVRVideoFrameDataset(Dataset):

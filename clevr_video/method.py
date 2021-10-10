@@ -1,11 +1,31 @@
+import pytorch_lightning as pl
 import torch
+from torch import optim
 from torchvision import utils as vutils
 
-from ..slot_attention.method import SlotAttentionMethod
-from ..slot_attention.utils import to_rgb_from_tensor
+from model import SlotAttentionModel
+from params import SlotAttentionParams
+from utils import Tensor, to_rgb_from_tensor
 
 
-class SlotAttentionVideoMethod(SlotAttentionMethod):
+class SlotAttentionVideoMethod(pl.LightningModule):
+
+    def __init__(self, model: SlotAttentionModel,
+                 datamodule: pl.LightningDataModule,
+                 params: SlotAttentionParams):
+        super().__init__()
+        self.model = model
+        self.datamodule = datamodule
+        self.params = params
+
+    def forward(self, input: Tensor, **kwargs) -> Tensor:
+        return self.model(input, **kwargs)
+
+    def training_step(self, batch, batch_idx, optimizer_idx=0):
+        train_loss = self.model.loss_function(batch)
+        logs = {key: val.item() for key, val in train_loss.items()}
+        self.log_dict(logs, sync_dist=True)
+        return train_loss
 
     def sample_images(self):
         dl = self.datamodule.val_dataloader()
@@ -66,3 +86,48 @@ class SlotAttentionVideoMethod(SlotAttentionMethod):
         dst.is_video = False
 
         return video
+
+    def validation_step(self, batch, batch_idx, optimizer_idx=0):
+        val_loss = self.model.loss_function(batch)
+        return val_loss
+
+    def validation_epoch_end(self, outputs):
+        avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
+        logs = {
+            "avg_val_loss": avg_loss,
+        }
+        self.log_dict(logs, sync_dist=True)
+        print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))
+
+    def configure_optimizers(self):
+        optimizer = optim.Adam(
+            self.model.parameters(),
+            lr=self.params.lr,
+            weight_decay=self.params.weight_decay)
+
+        warmup_steps_pct = self.params.warmup_steps_pct
+        decay_steps_pct = self.params.decay_steps_pct
+        total_steps = self.params.max_epochs * len(
+            self.datamodule.train_dataloader())
+
+        def warm_and_decay_lr_scheduler(step: int):
+            warmup_steps = warmup_steps_pct * total_steps
+            decay_steps = decay_steps_pct * total_steps
+            assert step <= total_steps
+            if step < warmup_steps:
+                factor = step / warmup_steps
+            else:
+                factor = 1
+            factor *= self.params.scheduler_gamma**(step / decay_steps)
+            return factor
+
+        scheduler = optim.lr_scheduler.LambdaLR(
+            optimizer=optimizer, lr_lambda=warm_and_decay_lr_scheduler)
+
+        return (
+            [optimizer],
+            [{
+                "scheduler": scheduler,
+                "interval": "step",
+            }],
+        )

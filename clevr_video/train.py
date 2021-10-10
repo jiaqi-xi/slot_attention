@@ -9,11 +9,9 @@ from torchvision import transforms
 
 from data import CLEVRVideoFrameDataModule
 from method import SlotAttentionVideoMethod as SlotAttentionMethod
-from utils import VideoLogCallback
-from ..slot_attention.model import SlotAttentionModel
-from ..slot_attention.params import SlotAttentionParams
-from ..slot_attention.utils import ImageLogCallback
-from ..slot_attention.utils import rescale
+from utils import VideoLogCallback, ImageLogCallback, rescale
+from model import SlotAttentionModel
+from params import SlotAttentionParams
 
 
 def main(params: Optional[SlotAttentionParams] = None):
