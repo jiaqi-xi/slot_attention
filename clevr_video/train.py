@@ -7,12 +7,13 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from torchvision import transforms
 
-from data import CLEVRDataModule
-from method import SlotAttentionMethod
-from model import SlotAttentionModel
-from params import SlotAttentionParams
-from utils import ImageLogCallback
-from utils import rescale
+from data import CLEVRVideoFrameDataModule
+from method import SlotAttentionVideoMethod as SlotAttentionMethod
+from utils import VideoLogCallback
+from ..slot_attention.model import SlotAttentionModel
+from ..slot_attention.params import SlotAttentionParams
+from ..slot_attention.utils import ImageLogCallback
+from ..slot_attention.utils import rescale
 
 
 def main(params: Optional[SlotAttentionParams] = None):
@@ -38,7 +39,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         transforms.Resize(params.resolution),
     ])
 
-    clevr_datamodule = CLEVRDataModule(
+    clevr_datamodule = CLEVRVideoFrameDataModule(
         data_root=params.data_root,
         max_n_objects=params.num_slots - 1,
         train_batch_size=params.batch_size,
@@ -67,13 +68,13 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     logger_name = args.params
     logger = pl_loggers.WandbLogger(
-        project="slot-attention-clevr6", name=logger_name)
+        project="slot-attention-clevr6-video", name=logger_name)
 
-    # saves a file like: 'path/to/ckp/CLEVR001-val_loss=0.0032.ckpt'
+    # saves a file like: 'path/to/ckp/CLEVRVideo001-val_loss=0.0032.ckpt'
     checkpoint_callback = ModelCheckpoint(
         monitor="avg_val_loss",
         dirpath=f"./checkpoint/{args.params}",
-        filename="CLEVR{epoch:03d}-val_loss_{avg_val_loss:.4f}",
+        filename="CLEVRVideo{epoch:03d}-val_loss_{avg_val_loss:.4f}",
         save_top_k=3,
         mode="min",
     )
@@ -89,6 +90,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         callbacks=[
             LearningRateMonitor("step"),
             ImageLogCallback(),
+            VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
     )

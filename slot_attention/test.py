@@ -47,28 +47,24 @@ def main(params=None):
 
     model = SlotAttentionMethod(
         model=model, datamodule=clevr_datamodule, params=params)
-    model.load_state_dict(torch.load(args.weight), strict=True)
+    model.load_state_dict(torch.load(args.weight)['state_dict'], strict=True)
     model = model.cuda().eval()
 
     save_folder = os.path.join(os.path.dirname(args.weight), 'vis')
     os.makedirs(save_folder, exist_ok=True)
 
     # get image from train and val dataset
-    inference(
-        model,
-        clevr_datamodule.train_dataset,
-        save_folder=os.path.join(save_folder, 'train'),
-        num=args.test_num)
-    inference(
-        model,
-        clevr_datamodule.val_dataset,
-        save_folder=os.path.join(save_folder, 'val'),
-        num=args.test_num)
+    train_res = inference(
+        model, clevr_datamodule.train_dataset, num=args.test_num)
+    val_res = inference(model, clevr_datamodule.val_dataset, num=args.test_num)
+    train_res.save(os.path.join(save_folder, 'train.png'))
+    val_res.save(os.path.join(save_folder, 'val.png'))
 
 
-def inference(model, dataset, save_folder, num=10):
+def inference(model, dataset, num=10):
     num_data = len(dataset)
     data_idx = np.random.choice(num_data, num, replace=False)
+    results = []
     for idx in data_idx:
         img = dataset.__getitem__(idx).unsqueeze(0).float().cuda()
         recon_combined, recons, masks, slots = model(img)
@@ -88,10 +84,13 @@ def inference(model, dataset, save_folder, num=10):
             normalize=False,
             nrow=out.shape[1],
         )
+        results.append(images)
 
-        # save result
-        new = transforms.ToPILImage()(images)
-        new.save(os.path.join(save_folder, f'{idx:06d}.png'))
+    # concat results vertically
+    results = [transforms.ToPILImage()(image) for image in results]
+    results = np.concatenate([np.array(image) for image in results], axis=0)
+    new = Image.fromarray(results.astype(np.uint8))
+    return new
 
 
 if __name__ == "__main__":
@@ -102,7 +101,12 @@ if __name__ == "__main__":
     parser.add_argument('--params', type=str, default='params')
     parser.add_argument('--weight', type=str, required=True)
     parser.add_argument('--test-num', type=int, default=10)
+    # TODO: I didn't find improvement using num-iter=5 as stated in the paper
+    parser.add_argument('--num-iter', type=int, default=3)
     args = parser.parse_args()
+    if args.params.endswith('.py'):
+        args.params = args.params[:-3]
     params = importlib.import_module(args.params)
     params = params.SlotAttentionParams()
+    params.num_iterations = args.num_iter
     main(params)

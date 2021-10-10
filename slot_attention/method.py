@@ -53,7 +53,7 @@ class SlotAttentionMethod(pl.LightningModule):
             out.view(batch_size * out.shape[1], C, H, W).cpu(),
             normalize=False,
             nrow=out.shape[1],
-        )
+        )  # [3, B*H, (num_slots+2)*W]
 
         return images
 
