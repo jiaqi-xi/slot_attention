@@ -41,11 +41,11 @@ class CLEVRVideoFrameDataset(Dataset):
         assert os.path.exists(
             self.data_path), f"Path {self.data_path} does not exist"
 
-        with open(os.path.join(self.data_root, f'{split}_annos.json'),
-                  'r') as f:
+        with open(os.path.join('./data/', f'{split}_annos.json'), 'r') as f:
             self.anno_paths = json.load(f)
         self.files = self.get_files()
 
+        self.num_videos = len(self.files)
         self.clip_len = clip_len
         self.is_video = is_video
 
@@ -68,7 +68,8 @@ class CLEVRVideoFrameDataset(Dataset):
         return len(self.files) * self.clip_len
 
     def _get_video(self, index: int):
-        img_idx = index // self.clip_len
+        # assume input is video index!
+        img_idx = index
         image_path = self.files[img_idx]
         cap = cv2.VideoCapture(image_path)
         success = True

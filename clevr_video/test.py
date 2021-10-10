@@ -5,14 +5,13 @@ import numpy as np
 
 import torch
 from torchvision import transforms
-from PIL import Image
 from torchvision import utils as vutils
 
-from data import CLEVRDataModule
-from method import SlotAttentionMethod
+from data import CLEVRVideoFrameDataModule
+from method import SlotAttentionVideoMethod as SlotAttentionMethod
 from model import SlotAttentionModel
 from params import SlotAttentionParams
-from utils import rescale, to_rgb_from_tensor
+from utils import rescale, to_rgb_from_tensor, save_video
 
 
 def main(params=None):
@@ -34,7 +33,7 @@ def main(params=None):
         transforms.Resize(params.resolution),
     ])
 
-    clevr_datamodule = CLEVRDataModule(
+    clevr_datamodule = CLEVRVideoFrameDataModule(
         data_root=params.data_root,
         max_n_objects=params.num_slots - 1,
         train_batch_size=params.batch_size,
@@ -59,39 +58,41 @@ def main(params=None):
             model, clevr_datamodule.train_dataset, num=args.test_num)
         val_res = inference(
             model, clevr_datamodule.val_dataset, num=args.test_num)
-    train_res.save(os.path.join(save_folder, 'train.png'))
-    val_res.save(os.path.join(save_folder, 'val.png'))
+    save_video(train_res, os.path.join(save_folder, 'train.mp4'), fps=6)
+    save_video(val_res, os.path.join(save_folder, 'val.mp4'), fps=6)
 
 
-def inference(model, dataset, num=10):
-    num_data = len(dataset)
+def inference(model, dataset, num=3):
+    dataset.is_video = True
+    num_data = dataset.num_videos
     data_idx = np.random.choice(num_data, num, replace=False)
     results = []
     for idx in data_idx:
-        img = dataset.__getitem__(idx).unsqueeze(0).float().cuda()
-        recon_combined, recons, masks, slots = model(img)
+        video = dataset.__getitem__(idx).float().cuda()
+        recon_combined, recons, masks, slots = model(video)
         out = to_rgb_from_tensor(
             torch.cat(
                 [
-                    img.unsqueeze(1),  # original images
+                    video.unsqueeze(1),  # original images
                     recon_combined.unsqueeze(1),  # reconstructions
                     recons * masks + (1 - masks),  # each slot
                 ],
                 dim=1,
-            ))
+            ))  # [B (temporal dim), num_slots+2, 3, H, W]
 
-        batch_size, num_slots, C, H, W = recons.shape
-        images = vutils.make_grid(
-            out.view(batch_size * out.shape[1], C, H, W).cpu(),
-            normalize=False,
-            nrow=out.shape[1],
-        )
-        results.append(images)
+        T, num_slots, C, H, W = recons.shape
+        video = torch.stack([
+            vutils.make_grid(
+                out[i].cpu(),
+                normalize=False,
+                nrow=out.shape[1],
+            ) for i in range(T)
+        ])  # [T, 3, H, (num_slots+2)*W]
+        results.append(video.numpy())
 
     # concat results vertically
-    results = [transforms.ToPILImage()(image) for image in results]
-    results = np.concatenate([np.array(image) for image in results], axis=0)
-    results = Image.fromarray(results.astype(np.uint8))
+    results = np.concatenate(results, axis=2)  # [T, 3, B*H, (num_slots+2)*W]
+    results = np.ascontiguousarray(results.transpose((0, 2, 3, 1)))
     return results
 
 
@@ -102,7 +103,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Slot Attention')
     parser.add_argument('--params', type=str, default='params')
     parser.add_argument('--weight', type=str, required=True)
-    parser.add_argument('--test-num', type=int, default=10)
+    parser.add_argument('--test-num', type=int, default=5)
     # TODO: I didn't find improvement using num-iter=5 as stated in the paper
     parser.add_argument('--num-iter', type=int, default=3)
     args = parser.parse_args()

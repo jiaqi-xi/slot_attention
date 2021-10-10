@@ -1,3 +1,5 @@
+wandb/
+checkpoint/
 checkpoints/
 checkpoint_details.json
 .idea/
