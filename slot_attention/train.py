@@ -67,14 +67,15 @@ def main(params: Optional[SlotAttentionParams] = None):
     method = SlotAttentionMethod(
         model=model, datamodule=clevr_datamodule, params=params)
 
-    logger_name = args.params
+    logger_name = f'{args.params}-fp16' if params.fp16 else args.params
     logger = pl_loggers.WandbLogger(
         project="slot-attention-clevr6", name=logger_name)
 
     # saves a file like: 'path/to/ckp/CLEVR001-val_loss=0.0032.ckpt'
     checkpoint_callback = ModelCheckpoint(
         monitor="avg_val_loss",
-        dirpath=f"./checkpoint/{args.params}",
+        dirpath="./checkpoint/"
+        f"{args.params + '-fp16' if params.fp16 else args.params}",
         filename="CLEVR{epoch:03d}-val_loss_{avg_val_loss:.4f}",
         save_top_k=3,
         mode="min",
@@ -101,11 +102,13 @@ def main(params: Optional[SlotAttentionParams] = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Slot Attention')
     parser.add_argument('--params', type=str, default='params')
+    parser.add_argument('--epochs', type=int, default=8)
     parser.add_argument('--fp16', action='store_true')
     args = parser.parse_args()
     if args.params.endswith('.py'):
         args.params = args.params[:-3]
     params = importlib.import_module(args.params)
     params = params.SlotAttentionParams()
+    params.max_epochs = args.epochs
     params.fp16 = args.fp16
     main(params)
