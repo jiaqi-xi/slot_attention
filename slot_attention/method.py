@@ -3,14 +3,17 @@ import torch
 from torch import optim
 from torchvision import utils as vutils
 
-from slot_attention.model import SlotAttentionModel
-from slot_attention.params import SlotAttentionParams
-from slot_attention.utils import Tensor
-from slot_attention.utils import to_rgb_from_tensor
+from model import SlotAttentionModel
+from params import SlotAttentionParams
+from utils import Tensor
+from utils import to_rgb_from_tensor
 
 
 class SlotAttentionMethod(pl.LightningModule):
-    def __init__(self, model: SlotAttentionModel, datamodule: pl.LightningDataModule, params: SlotAttentionParams):
+
+    def __init__(self, model: SlotAttentionModel,
+                 datamodule: pl.LightningDataModule,
+                 params: SlotAttentionParams):
         super().__init__()
         self.model = model
         self.datamodule = datamodule
@@ -28,7 +31,7 @@ class SlotAttentionMethod(pl.LightningModule):
     def sample_images(self):
         dl = self.datamodule.val_dataloader()
         perm = torch.randperm(self.params.batch_size)
-        idx = perm[: self.params.n_samples]
+        idx = perm[:self.params.n_samples]
         batch = next(iter(dl))[idx]
         if self.params.gpus > 0:
             batch = batch.to(self.device)
@@ -43,12 +46,13 @@ class SlotAttentionMethod(pl.LightningModule):
                     recons * masks + (1 - masks),  # each slot
                 ],
                 dim=1,
-            )
-        )
+            ))
 
         batch_size, num_slots, C, H, W = recons.shape
         images = vutils.make_grid(
-            out.view(batch_size * out.shape[1], C, H, W).cpu(), normalize=False, nrow=out.shape[1],
+            out.view(batch_size * out.shape[1], C, H, W).cpu(),
+            normalize=False,
+            nrow=out.shape[1],
         )
 
         return images
@@ -66,11 +70,15 @@ class SlotAttentionMethod(pl.LightningModule):
         print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.model.parameters(), lr=self.params.lr, weight_decay=self.params.weight_decay)
+        optimizer = optim.Adam(
+            self.model.parameters(),
+            lr=self.params.lr,
+            weight_decay=self.params.weight_decay)
 
         warmup_steps_pct = self.params.warmup_steps_pct
         decay_steps_pct = self.params.decay_steps_pct
-        total_steps = self.params.max_epochs * len(self.datamodule.train_dataloader())
+        total_steps = self.params.max_epochs * len(
+            self.datamodule.train_dataloader())
 
         def warm_and_decay_lr_scheduler(step: int):
             warmup_steps = warmup_steps_pct * total_steps
@@ -80,12 +88,16 @@ class SlotAttentionMethod(pl.LightningModule):
                 factor = step / warmup_steps
             else:
                 factor = 1
-            factor *= self.params.scheduler_gamma ** (step / decay_steps)
+            factor *= self.params.scheduler_gamma**(step / decay_steps)
             return factor
 
-        scheduler = optim.lr_scheduler.LambdaLR(optimizer=optimizer, lr_lambda=warm_and_decay_lr_scheduler)
+        scheduler = optim.lr_scheduler.LambdaLR(
+            optimizer=optimizer, lr_lambda=warm_and_decay_lr_scheduler)
 
         return (
             [optimizer],
-            [{"scheduler": scheduler, "interval": "step",}],
+            [{
+                "scheduler": scheduler,
+                "interval": "step",
+            }],
         )

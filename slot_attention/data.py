@@ -11,10 +11,11 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 from torchvision.transforms import transforms
 
-from slot_attention.utils import compact
+from utils import compact
 
 
 class CLEVRDataset(Dataset):
+
     def __init__(
         self,
         data_root: str,
@@ -30,9 +31,11 @@ class CLEVRDataset(Dataset):
         self.data_path = os.path.join(data_root, "images", split)
         self.max_n_objects = max_n_objects
         self.split = split
-        assert os.path.exists(self.data_root), f"Path {self.data_root} does not exist"
-        assert self.split == "train" or self.split == "val" or self.split == "test"
-        assert os.path.exists(self.data_path), f"Path {self.data_path} does not exist"
+        assert os.path.exists(
+            self.data_root), f"Path {self.data_root} does not exist"
+        assert self.split in ["train", "val", "test"]
+        assert os.path.exists(
+            self.data_path), f"Path {self.data_path} does not exist"
         self.files = self.get_files()
 
     def __getitem__(self, index: int):
@@ -45,22 +48,28 @@ class CLEVRDataset(Dataset):
         return len(self.files)
 
     def get_files(self) -> List[str]:
-        with open(os.path.join(self.data_root, f"scenes/CLEVR_{self.split}_scenes.json")) as f:
+        with open(
+                os.path.join(self.data_root,
+                             f"scenes/CLEVR_{self.split}_scenes.json")) as f:
             scene = json.load(f)
         paths: List[Optional[str]] = []
         total_num_images = len(scene["scenes"])
         i = 0
-        while (self.max_num_images is None or len(paths) < self.max_num_images) and i < total_num_images:
+        while (self.max_num_images is None
+               or len(paths) < self.max_num_images) and i < total_num_images:
             num_objects_in_scene = len(scene["scenes"][i]["objects"])
             if num_objects_in_scene <= self.max_n_objects:
-                image_path = os.path.join(self.data_path, scene["scenes"][i]["image_filename"])
-                assert os.path.exists(image_path), f"{image_path} does not exist"
+                image_path = os.path.join(self.data_path,
+                                          scene["scenes"][i]["image_filename"])
+                assert os.path.exists(
+                    image_path), f"{image_path} does not exist"
                 paths.append(image_path)
             i += 1
         return sorted(compact(paths))
 
 
 class CLEVRDataModule(pl.LightningDataModule):
+
     def __init__(
         self,
         data_root: str,
@@ -117,14 +126,20 @@ class CLEVRDataModule(pl.LightningDataModule):
 
 
 class CLEVRTransforms(object):
+
     def __init__(self, resolution: Tuple[int, int]):
-        self.transforms = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Lambda(lambda X: 2 * X - 1.0),  # rescale between -1 and 1
-                transforms.Resize(resolution),
-            ]
-        )
+        '''
+        crop = ((29, 221), (64, 256))
+        # TODO: whether to add center crop here?
+        transforms.Lambda(
+            lambda X: X[:, crop[0][0]:crop[0][1], crop[1][0]:crop[1][1]]),
+        '''
+        self.transforms = transforms.Compose([
+            transforms.ToTensor(),  # [3, H, W]
+            transforms.Lambda(
+                lambda X: 2 * X - 1.0),  # rescale between -1 and 1
+            transforms.Resize(resolution),
+        ])
 
     def __call__(self, input, *args, **kwargs):
         return self.transforms(input)

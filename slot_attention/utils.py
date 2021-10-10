@@ -14,12 +14,21 @@ TK = TypeVar("TK")
 TV = TypeVar("TV")
 
 
-def conv_transpose_out_shape(in_size, stride, padding, kernel_size, out_padding, dilation=1):
-    return (in_size - 1) * stride - 2 * padding + dilation * (kernel_size - 1) + out_padding + 1
+def conv_transpose_out_shape(in_size,
+                             stride,
+                             padding,
+                             kernel_size,
+                             out_padding,
+                             dilation=1):
+    return (in_size - 1) * stride - 2 * padding + dilation * (
+        kernel_size - 1) + out_padding + 1
 
 
-def assert_shape(actual: Union[torch.Size, Tuple[int, ...]], expected: Tuple[int, ...], message: str = ""):
-    assert actual == expected, f"Expected shape: {expected} but passed shape: {actual}. {message}"
+def assert_shape(actual: Union[torch.Size, Tuple[int, ...]],
+                 expected: Tuple[int, ...],
+                 message: str = ""):
+    assert actual == expected, \
+        f"Expected shape: {expected} but passed shape: {actual}. {message}"
 
 
 def build_grid(resolution):
@@ -32,7 +41,7 @@ def build_grid(resolution):
 
 
 def rescale(x: Tensor) -> Tensor:
-    return x * 2 - 1
+    return x * 2. - 1.
 
 
 def compact(l: Any) -> Any:
@@ -50,6 +59,7 @@ def only(x):
 
 
 class ImageLogCallback(Callback):
+
     def on_validation_epoch_end(self, trainer, pl_module):
         """Called when the train epoch ends."""
 
@@ -57,7 +67,8 @@ class ImageLogCallback(Callback):
             with torch.no_grad():
                 pl_module.eval()
                 images = pl_module.sample_images()
-                trainer.logger.experiment.log({"images": [wandb.Image(images)]}, commit=False)
+                trainer.logger.experiment.log(
+                    {"images": [wandb.Image(images)]}, commit=False)
 
 
 def to_rgb_from_tensor(x: Tensor):
