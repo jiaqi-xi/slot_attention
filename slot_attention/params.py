@@ -31,3 +31,5 @@ class SlotAttentionParams:
     use_relu: bool = True
     # MLP hidden size in Slot Attention
     slot_mlp_size = 128
+    # mixed precision training
+    fp16 = False

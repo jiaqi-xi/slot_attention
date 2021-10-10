@@ -30,6 +30,8 @@ def main(params: Optional[SlotAttentionParams] = None):
         if params.num_val_images:
             print("INFO: restricting the validation dataset size to "
                   f"`num_val_images`: {params.num_val_images}")
+        if params.fp16:
+            print("INFO: using FP16 training!")
 
     clevr_transforms = transforms.Compose([
         transforms.ToTensor(),
@@ -91,6 +93,7 @@ def main(params: Optional[SlotAttentionParams] = None):
             ImageLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
+        precision=16 if params.fp16 else 32,
     )
     trainer.fit(method, datamodule=clevr_datamodule)
 
@@ -98,9 +101,11 @@ def main(params: Optional[SlotAttentionParams] = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Slot Attention')
     parser.add_argument('--params', type=str, default='params')
+    parser.add_argument('--fp16', action='store_true')
     args = parser.parse_args()
     if args.params.endswith('.py'):
         args.params = args.params[:-3]
     params = importlib.import_module(args.params)
     params = params.SlotAttentionParams()
+    params.fp16 = args.fp16
     main(params)
