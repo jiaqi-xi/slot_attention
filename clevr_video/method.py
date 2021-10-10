@@ -88,7 +88,7 @@ class SlotAttentionVideoMethod(pl.LightningModule):
             results.append(video)
 
         dst.is_video = False
-        video = torch.cat(video, dim=2)  # [T, 3, B*H, (num_slots+2)*W]
+        video = torch.cat(results, dim=2)  # [T, 3, B*H, (num_slots+2)*W]
 
         return video
 
