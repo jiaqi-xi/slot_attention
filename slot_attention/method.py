@@ -83,7 +83,7 @@ class SlotAttentionMethod(pl.LightningModule):
         def warm_and_decay_lr_scheduler(step: int):
             warmup_steps = warmup_steps_pct * total_steps
             decay_steps = decay_steps_pct * total_steps
-            assert step < total_steps
+            assert step <= total_steps
             if step < warmup_steps:
                 factor = step / warmup_steps
             else:
