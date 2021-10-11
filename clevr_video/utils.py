@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from PIL import Image
 from typing import Any
 from typing import Tuple
 from typing import TypeVar
@@ -91,31 +92,23 @@ def to_rgb_from_tensor(x: Tensor):
     return (x * 0.5 + 0.5).clamp(0, 1)
 
 
-def save_video(video, save_path, fps=30, codec='mp4v'):
-    """video: np.ndarray of shape [T, 30, H, W, 3] or simply [M, H, W, 3]"""
+def make_gif(video, save_path, fps=30):
+    """video: np.ndarray of shape [M, H, W, 3]"""
     if isinstance(video, torch.Tensor):
         video = video.detach().cpu().numpy()
     assert video.dtype in [np.float16, np.float32, np.float64]  # [0., 1.]
+    assert len(video.shape) == 4, 'unsupported save video shape'
     assert video.shape[-1] == 3  # colored video
-    # TODO: cv2 has different color channel order GBR
-    video = video[..., [2, 1, 0]]
-    H, W = video.shape[-3:-1]
-    if len(video.shape) == 5:  # [T, 30, H, W, 3]
-        assert video.shape[1] == fps
-        video = video.reshape((-1, H, W, 3))  # [M, H, W, 3]
-    else:
-        assert len(video.shape) == 4, 'unsupported save video shape'
-    # video = np.ascontiguousarray(video)
-    assert save_path.split('.')[-1] == 'mp4'  # save as mp4 file
     # clip max value
-    if video.max() > 1.:
-        print('Warning! Video max value > 1.0')
-    video = np.clip(video, a_min=0., a_max=1.)
+    # if video.max() > 1.:
+    #     print('Warning! Video max value > 1.0')
+    # video = np.clip(video, a_min=0., a_max=1.)
     # make video uint8 array for save
     video = np.round(video * 255.).astype(np.uint8)
-    # opencv has opposite dimension definition as numpy
-    size = [W, H]
-    out = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*codec), fps, size)
-    for i in range(video.shape[0]):
-        out.write(video[i])
-    out.release()
+    video = [Image.fromarray(img) for img in video]
+    video[0].save(
+        save_path,
+        save_all=True,
+        append_images=video[1:],
+        duration=int(1000. / fps),
+        loop=0)

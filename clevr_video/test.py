@@ -11,7 +11,7 @@ from data import CLEVRVideoFrameDataModule
 from method import SlotAttentionVideoMethod as SlotAttentionMethod
 from model import SlotAttentionModel
 from params import SlotAttentionParams
-from utils import rescale, to_rgb_from_tensor, save_video
+from utils import rescale, to_rgb_from_tensor, make_gif
 
 
 def main(params=None):
@@ -58,8 +58,8 @@ def main(params=None):
             model, clevr_datamodule.train_dataset, num=args.test_num)
         val_res = inference(
             model, clevr_datamodule.val_dataset, num=args.test_num)
-    save_video(train_res, os.path.join(save_folder, 'train.mp4'), fps=6)
-    save_video(val_res, os.path.join(save_folder, 'val.mp4'), fps=6)
+    make_gif(train_res, os.path.join(save_folder, 'train.gif'), fps=2)
+    make_gif(val_res, os.path.join(save_folder, 'val.gif'), fps=2)
 
 
 def inference(model, dataset, num=3):
