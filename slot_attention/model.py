@@ -210,8 +210,6 @@ class SlotAttentionModel(nn.Module):
                 ),
             ))
 
-        assert_shape(resolution, (out_size, out_size), message="")
-
         self.decoder = nn.Sequential(*modules)
         self.decoder_pos_embedding = SoftPositionEmbed(self.in_channels,
                                                        self.out_features,

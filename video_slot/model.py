@@ -249,17 +249,26 @@ class SlotAttentionModel(nn.Module):
         # `out` has shape: [batch_size*num_slots, num_channels+1, height, width].
 
         out = out.view(batch_size, num_slots, num_channels + 1, height, width)
-        recons = out[:, :, :num_channels, :, :]
-        masks = out[:, :, -1:, :, :]
+        recons = out[:, :, :num_channels, :, :]  # [B, num_slots, C, H, W]
+        masks = out[:, :, -1:, :, :]  # [B, num_slots, 1, H, W]
         masks = F.softmax(masks, dim=1)
-        recon_combined = torch.sum(recons * masks, dim=1)
-        return recon_combined, recons, masks, slots
+        slot_recons = recons * masks
+        recon_combined = torch.sum(slot_recons, dim=1)
+        # recon_combined: [B, C, H, W]
+        # recons: [B, num_slots, C, H, W]
+        # masks: [B, num_slots, 1, H, W]
+        # slot_recons: [B, num_slots, C, H, W]
+        # TODO: I return slot_recons instead of slots here!
+        # TODO: this is different from the other slot-att models
+        return recon_combined, recons, masks, slot_recons
 
     def loss_function(self, input):
         recon_combined, recons, masks, slots = self.forward(input)
         loss = F.mse_loss(recon_combined, input)
         return {
-            "loss": loss,
+            'loss': loss,
+            'masks': masks,
+            'slots': slots,
         }
 
 
@@ -275,3 +284,139 @@ class SoftPositionEmbed(nn.Module):
     def forward(self, inputs: Tensor):
         emb_proj = self.dense(self.grid).permute(0, 3, 1, 2)
         return inputs + emb_proj
+
+
+def conv(in_channels, out_channels, kernel_size, stride=1, bias=True):
+    return nn.Conv2d(
+        in_channels,
+        out_channels,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=kernel_size // 2,
+        bias=bias)
+
+
+def conv_block(in_channels, out_channels, kernel_size, stride, bias, bn):
+    if bn:
+        return nn.Sequential(
+            conv(in_channels, out_channels, kernel_size, stride, bias),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(),
+        )
+    return nn.Sequential(
+        conv(in_channels, out_channels, kernel_size, stride, bias),
+        nn.ReLU(),
+    )
+
+
+def deconv(in_channels, out_channels, kernel_size, stride=1, bias=True):
+    """Output shape could be in_shape * stride"""
+    padding = kernel_size // 2
+    out_padding = int(stride + 2 * padding - kernel_size)
+    return nn.ConvTranspose2d(
+        in_channels,
+        out_channels,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        output_padding=out_padding,
+        bias=bias)
+
+
+def deconv_block(in_channels, out_channels, kernel_size, stride, bias, bn):
+    if bn:
+        return nn.Sequential(
+            deconv(in_channels, out_channels, kernel_size, stride, bias),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(),
+        )
+    return nn.Sequential(
+        deconv(in_channels, out_channels, kernel_size, stride, bias),
+        nn.ReLU(),
+    )
+
+
+class ConvAutoEncoder(nn.Module):
+    """Predictor given object_t output object_{t+1}"""
+
+    def __init__(self,
+                 in_channels: int,
+                 enc_channels: Tuple[int] = [32, 32, 32],
+                 dec_channels: Tuple[int] = [32, 32, 32],
+                 kernel_size: int = 5,
+                 strides: Tuple[int] = [2, 2, 2],
+                 use_bn: bool = False):
+        super().__init__()
+
+        assert len(enc_channels) == len(strides) == len(dec_channels)
+        encoder_resolution = 128
+        decoder_resolution = encoder_resolution
+        for stride in strides:
+            decoder_resolution //= stride
+
+        enc_channels.insert(0, in_channels)
+        encoder = []
+        for i in range(len(enc_channels) - 1):
+            encoder.append(
+                conv_block(
+                    enc_channels[i],
+                    enc_channels[i + 1],
+                    kernel_size,
+                    strides[i],
+                    bias=not use_bn,
+                    bn=use_bn))
+        self.encoder = nn.Sequential(*encoder)
+
+        in_size = decoder_resolution
+        out_size = in_size
+        strides = strides[::-1]  # revert for decoder
+        dec_channels.insert(0, enc_channels[-1])
+        decoder = []
+        for i in range(len(dec_channels) - 1):
+            stride = strides[i]
+            padding = kernel_size // 2
+            out_padding = int(stride + 2 * padding - kernel_size)
+            decoder.append(
+                deconv_block(
+                    dec_channels[i],
+                    dec_channels[i + 1],
+                    kernel_size,
+                    strides[i],
+                    bias=not use_bn,
+                    bn=use_bn))
+            out_size = conv_transpose_out_shape(out_size, stride, padding,
+                                                kernel_size, out_padding)
+
+        assert out_size == encoder_resolution, \
+            f'ConvAE decoder shape {out_size} does not match {encoder_resolution}!'
+
+        # output convolutions
+        decoder.append(
+            nn.ConvTranspose2d(
+                dec_channels[-1],
+                in_channels,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                output_padding=0,
+            ))
+        self.decoder = nn.Sequential(*decoder)
+
+    def forward(self, x):
+        """Predict x at next time step.
+        x: [B, C, H, W]
+        """
+        feats = self.encoder(x)
+        pred_x = self.decoder(feats)
+        return pred_x
+
+    def loss_function(self, x_prev, x_future):
+        """x_prev and x_future are of same shape.
+        Can be either mask or recon or mask * recon
+        """
+        x_pred = self.forward(x_prev)
+        loss = F.mse_loss(x_pred, x_future)
+        return {
+            'pred_loss': loss,
+            'pred': x_pred,
+        }
