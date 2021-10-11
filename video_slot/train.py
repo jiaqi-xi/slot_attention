@@ -63,7 +63,10 @@ def main(params: Optional[SlotAttentionParams] = None):
         use_relu=params.use_relu,
         slot_mlp_size=params.slot_mlp_size,
     )
-    predictor = ConvAutoEncoder(in_channels=1 if params.pred_mask else 3)
+    predictor = ConvAutoEncoder(
+        in_channels=1 if params.pred_mask else 3,
+        num_slots=params.num_slots,
+        use_softmax=params.pred_mask)
 
     method = SlotAttentionMethod(
         model=model,
