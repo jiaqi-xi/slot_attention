@@ -36,7 +36,7 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         We need both reconstruction loss and a future prediction loss.
         batch: [B, sample_clip_num, C, H, W]
         """
-        bs, clip, C, H, W = batch.shape[:2]
+        bs, clip, C, H, W = batch.shape[:]
         train_output = self.model.loss_function(batch.view(-1, C, H, W))
         train_loss = {'loss': train_output['loss']}
         # masks: [B*clip, num_slots, 1, H, W]
@@ -55,7 +55,7 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         return train_loss
 
     def validation_step(self, batch, batch_idx, optimizer_idx=0):
-        bs, clip, C, H, W = batch.shape[:2]
+        bs, clip, C, H, W = batch.shape[:]
         val_output = self.model.loss_function(batch.view(-1, C, H, W))
         val_loss = {'loss': val_output['loss']}
         # masks: [B*clip, num_slots, 1, H, W]
@@ -85,9 +85,9 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         """data in shape [B*clip, num_slots, C', H, W]"""
         _, num_slots, C, H, W = data.shape[:]
         data = data.view(bs, clip, num_slots, C, H, W)
-        prev_input = data[:, :-1].view(bs * (clip - 1) * num_slots, C, H, W)
-        future_gt = data[:, 1:].view(bs * (clip - 1) * num_slots, C, H, W)
-        return prev_input.contiguous(), future_gt.contiguous()
+        prev_input = data[:, :-1].reshape(bs * (clip - 1) * num_slots, C, H, W)
+        future_gt = data[:, 1:].reshape(bs * (clip - 1) * num_slots, C, H, W)
+        return prev_input, future_gt
 
     def sample_images(self):
         dl = self.datamodule.val_dataloader()
@@ -114,9 +114,9 @@ class SlotAttentionVideoMethod(pl.LightningModule):
                 dim=1,
             ))  # [B*clip, num_slots+2, C, H, W]
 
-        bs, num_slots, C, H, W = recons.shape
+        num_slots = slots.shape[1]
         images = vutils.make_grid(
-            out.view(bs * out.shape[1], C, H, W).cpu(),
+            out.view(bs * clip * out.shape[1], C, H, W).cpu(),
             normalize=False,
             nrow=out.shape[1],
         )  # [C, (B*clip)*H, (num_slots+2)*W]

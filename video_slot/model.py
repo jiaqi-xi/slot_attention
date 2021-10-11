@@ -340,13 +340,19 @@ class ConvAutoEncoder(nn.Module):
     """Predictor given object_t output object_{t+1}"""
 
     def __init__(self,
+                 num_slots: int,
                  in_channels: int,
                  enc_channels: Tuple[int] = [32, 32, 32],
                  dec_channels: Tuple[int] = [32, 32, 32],
                  kernel_size: int = 5,
                  strides: Tuple[int] = [2, 2, 2],
-                 use_bn: bool = False):
+                 use_bn: bool = False,
+                 use_softmax: bool = False):
         super().__init__()
+
+        self.num_slots = num_slots
+        # if predict mask, then should apply softmax
+        self.use_softmax = use_softmax
 
         assert len(enc_channels) == len(strides) == len(dec_channels)
         encoder_resolution = 128
@@ -406,8 +412,12 @@ class ConvAutoEncoder(nn.Module):
         """Predict x at next time step.
         x: [B, C, H, W]
         """
+        _, C, H, W = x.shape[:]
         feats = self.encoder(x)
         pred_x = self.decoder(feats)
+        if self.use_softmax:
+            pred_x = F.softmax(pred_x.view(-1, self.num_slots, C, H, W), dim=1)
+            pred_x = pred_x.view(-1, C, H, W)
         return pred_x
 
     def loss_function(self, x_prev, x_future):
