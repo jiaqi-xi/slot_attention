@@ -34,8 +34,8 @@ class SlotAttentionParams:
     # sample clips per video as input
     sample_clip_num = 2
     # predict mask or image
-    pred_mask = True
+    pred_mask = False
     # whether stop the gradient of GT future
     stop_future_grad = False
     # whether and what to use as perceptual loss
-    perceptual_loss = ''
+    perceptual_loss = 'alex'
