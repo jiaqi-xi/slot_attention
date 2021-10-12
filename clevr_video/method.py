@@ -45,16 +45,25 @@ class SlotAttentionVideoMethod(pl.LightningModule):
                     recons * masks + (1 - masks),  # each slot
                 ],
                 dim=1,
-            ))
+            ))  # [B, num_slots+2, C, H, W]
 
         batch_size, num_slots, C, H, W = recons.shape
         images = vutils.make_grid(
             out.view(batch_size * out.shape[1], C, H, W).cpu(),
             normalize=False,
             nrow=out.shape[1],
-        )  # [3, B*H, (num_slots+2)*W]
+        )  # [C, B*H, (num_slots+2)*W]
 
-        return images
+        # also visualize the mask of slots
+        # masks of shape [B, num_slots, 1, H, W]
+        masks = torch.cat([masks] * C, dim=2)  # [B, num_slots, C, H, W]
+        masks = vutils.make_grid(
+            masks.view(batch_size * masks.shape[1], C, H, W).cpu(),
+            normalize=False,
+            nrow=masks.shape[1],
+        )  # [C, B*H, num_slots*W]
+
+        return images, masks
 
     def sample_video(self):
         dst = self.datamodule.val_dataset

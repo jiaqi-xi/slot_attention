@@ -69,9 +69,11 @@ class ImageLogCallback(Callback):
         if trainer.logger:
             with torch.no_grad():
                 pl_module.eval()
-                images = pl_module.sample_images()
+                images, masks = pl_module.sample_images()
                 trainer.logger.experiment.log(
-                    {"images": [wandb.Image(images)]}, commit=False)
+                    {"images": [wandb.Image(images),
+                                wandb.Image(masks)]},
+                    commit=False)
 
 
 class VideoLogCallback(Callback):
