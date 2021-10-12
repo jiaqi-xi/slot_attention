@@ -50,7 +50,17 @@ model = SlotAttentionMethod(
 model = model.cuda().eval()
 
 # Perceptual loss
-loss_fn_vgg = lpips.LPIPS(net='vgg')
+loss_fn_vgg = lpips.LPIPS(net='vgg').eval().cuda()
+for p in loss_fn_vgg.parameters():
+    p.requires_grad = False
+
+loss_fn_alex = lpips.LPIPS(net='alex').eval().cuda()
+for p in loss_fn_alex.parameters():
+    p.requires_grad = False
+
+loss_fn_squeeze = lpips.LPIPS(net='squeeze').eval().cuda()
+for p in loss_fn_squeeze.parameters():
+    p.requires_grad = False
 
 
 def inference(model, dataset, idx):
@@ -82,4 +92,18 @@ def vgg_sim(x, y):
     assert -1. <= x.min().item() <= 1.
     assert -1. <= y.min().item() <= 1.
     assert len(x.shape) == 4 and len(y.shape) == 4
-    return loss_fn_vgg(x, y)
+    return loss_fn_vgg(x, y)[:, 0, 0, 0]
+
+
+def alex_sim(x, y):
+    assert -1. <= x.min().item() <= 1.
+    assert -1. <= y.min().item() <= 1.
+    assert len(x.shape) == 4 and len(y.shape) == 4
+    return loss_fn_alex(x, y)[:, 0, 0, 0]
+
+
+def squeeze_sim(x, y):
+    assert -1. <= x.min().item() <= 1.
+    assert -1. <= y.min().item() <= 1.
+    assert len(x.shape) == 4 and len(y.shape) == 4
+    return loss_fn_squeeze(x, y)[:, 0, 0, 0]

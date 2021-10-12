@@ -443,8 +443,9 @@ class PerceptualLoss(nn.Module):
         for p in self.loss_fn.parameters():
             p.requires_grad = False
 
-    def forward(self, x_prev, x_future):
-        return self.loss_fn(x_prev, x_future)
+    def forward(self, x_prev):
+        """Just for backward compatibility with AEPredictor"""
+        return x_prev
 
     def loss_function(self, x_prev, x_future):
         """x_prev and x_future are of same shape.
@@ -453,7 +454,7 @@ class PerceptualLoss(nn.Module):
         assert len(x_prev.shape) == len(x_future.shape) == 4
         assert -1. <= x_prev.min() <= 1.
         assert -1. <= x_future.min() <= 1.
-        loss = self.forward(x_prev, x_future).mean()
+        loss = self.loss_fn(x_prev, x_future).mean()
         return {
             'pred_loss': loss,
             'pred': x_prev,
