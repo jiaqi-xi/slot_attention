@@ -4,6 +4,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+import lpips
 from utils import Tensor, assert_shape, build_grid, conv_transpose_out_shape
 
 
@@ -252,8 +253,8 @@ class SlotAttentionModel(nn.Module):
         recons = out[:, :, :num_channels, :, :]  # [B, num_slots, C, H, W]
         masks = out[:, :, -1:, :, :]  # [B, num_slots, 1, H, W]
         masks = F.softmax(masks, dim=1)
-        slot_recons = recons * masks
-        recon_combined = torch.sum(slot_recons, dim=1)
+        slot_recons = recons * masks + (1 - masks)
+        recon_combined = torch.sum(recons * masks, dim=1)
         # recon_combined: [B, C, H, W]
         # recons: [B, num_slots, C, H, W]
         # masks: [B, num_slots, 1, H, W]
@@ -429,4 +430,31 @@ class ConvAutoEncoder(nn.Module):
         return {
             'pred_loss': loss,
             'pred': x_pred,
+        }
+
+
+class PerceptualLoss(nn.Module):
+
+    def __init__(self, arch='vgg'):
+        super().__init__()
+
+        assert arch in ['alex', 'vgg', 'squeeze']
+        self.loss_fn = lpips.LPIPS(net=arch).eval()
+        for p in self.loss_fn.parameters():
+            p.requires_grad = False
+
+    def forward(self, x_prev, x_future):
+        return self.loss_fn(x_prev, x_future)
+
+    def loss_function(self, x_prev, x_future):
+        """x_prev and x_future are of same shape.
+        Should be mask * recon + (1 - mask)
+        """
+        assert len(x_prev.shape) == len(x_future.shape) == 4
+        assert -1. <= x_prev.min() <= 1.
+        assert -1. <= x_future.min() <= 1.
+        loss = self.forward(x_prev, x_future).mean()
+        return {
+            'pred_loss': loss,
+            'pred': x_prev,
         }

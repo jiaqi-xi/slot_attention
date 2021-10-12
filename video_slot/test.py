@@ -45,7 +45,10 @@ def main(params=None):
     )
 
     model = SlotAttentionMethod(
-        model=model, datamodule=clevr_datamodule, params=params)
+        model=model,
+        predictor=None,
+        datamodule=clevr_datamodule,
+        params=params)
     model.load_state_dict(torch.load(args.weight)['state_dict'], strict=True)
     model = model.cuda().eval()
 

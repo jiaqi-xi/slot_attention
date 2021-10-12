@@ -31,13 +31,11 @@ class SlotAttentionParams:
     use_relu: bool = True
     # MLP hidden size in Slot Attention
     slot_mlp_size = 128
-    # eval epoch interval
-    eval_interval = 1.0
-    # mixed precision training
-    fp16 = False
     # sample clips per video as input
     sample_clip_num = 2
     # predict mask or image
     pred_mask = True
     # whether stop the gradient of GT future
     stop_future_grad = False
+    # whether and what to use as perceptual loss
+    perceptual_loss = ''
