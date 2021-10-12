@@ -18,7 +18,7 @@ class SlotAttention(nn.Module):
                  num_slots,
                  slot_size,
                  mlp_hidden_size,
-                 epsilon=1e-8):
+                 epsilon=1e-6):
         super().__init__()
         self.in_features = in_features
         self.num_iterations = num_iterations
@@ -117,9 +117,10 @@ class SlotAttentionModel(nn.Module):
         slot_size: int = 64,
         hidden_dims: Tuple[int, ...] = (64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
-        empty_cache=False,
-        use_relu=False,  # TODO: official code use ReLU
-        slot_mlp_size=128,
+        empty_cache: bool = False,
+        use_relu: bool = False,  # TODO: official code use ReLU
+        slot_mlp_size: int = 128,
+        use_entropy_loss: bool = False,
     ):
         super().__init__()
         self.resolution = resolution
@@ -223,6 +224,8 @@ class SlotAttentionModel(nn.Module):
             mlp_hidden_size=slot_mlp_size,
         )
 
+        self.use_entropy_loss = use_entropy_loss  # -p*log(p)
+
     def forward(self, x):
         if self.empty_cache:
             torch.cuda.empty_cache()
@@ -261,9 +264,15 @@ class SlotAttentionModel(nn.Module):
     def loss_function(self, input):
         recon_combined, recons, masks, slots = self.forward(input)
         loss = F.mse_loss(recon_combined, input)
-        return {
+        loss_dict = {
             "loss": loss,
         }
+        # masks: [B, num_slots, 1, H, W], apply entropy loss
+        if self.use_entropy_loss:
+            masks = masks[:, :, 0]  # [B, num_slots, H, W]
+            entroly_loss = (-masks * torch.log(masks + 1e-6)).sum(1)[0].mean()
+            loss_dict['entropy'] = entroly_loss
+        return loss_dict
 
 
 class SoftPositionEmbed(nn.Module):

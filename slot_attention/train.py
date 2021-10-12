@@ -30,7 +30,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         if params.num_val_images:
             print("INFO: restricting the validation dataset size to "
                   f"`num_val_images`: {params.num_val_images}")
-        if params.fp16:
+        if args.fp16:
             print("INFO: using FP16 training!")
 
     clevr_transforms = transforms.Compose([
@@ -62,12 +62,13 @@ def main(params: Optional[SlotAttentionParams] = None):
         empty_cache=params.empty_cache,
         use_relu=params.use_relu,
         slot_mlp_size=params.slot_mlp_size,
+        use_entropy_loss=params.use_entropy_loss,
     )
 
     method = SlotAttentionMethod(
         model=model, datamodule=clevr_datamodule, params=params)
 
-    logger_name = f'{args.params}-fp16' if params.fp16 else args.params
+    logger_name = f'{args.params}-fp16' if args.fp16 else args.params
     logger = pl_loggers.WandbLogger(
         project="slot-attention-clevr6", name=logger_name)
 
@@ -75,7 +76,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     checkpoint_callback = ModelCheckpoint(
         monitor="avg_val_loss",
         dirpath="./checkpoint/"
-        f"{args.params + '-fp16' if params.fp16 else args.params}",
+        f"{args.params + '-fp16' if args.fp16 else args.params}",
         filename="CLEVR{epoch:03d}-val_loss_{avg_val_loss:.4f}",
         save_top_k=3,
         mode="min",
@@ -94,7 +95,7 @@ def main(params: Optional[SlotAttentionParams] = None):
             ImageLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
-        precision=16 if params.fp16 else 32,
+        precision=16 if args.fp16 else 32,
     )
     trainer.fit(method, datamodule=clevr_datamodule)
 
@@ -102,13 +103,10 @@ def main(params: Optional[SlotAttentionParams] = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Slot Attention')
     parser.add_argument('--params', type=str, default='params')
-    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--fp16', action='store_true')
     args = parser.parse_args()
     if args.params.endswith('.py'):
         args.params = args.params[:-3]
     params = importlib.import_module(args.params)
     params = params.SlotAttentionParams()
-    params.max_epochs = args.epochs
-    params.fp16 = args.fp16
     main(params)

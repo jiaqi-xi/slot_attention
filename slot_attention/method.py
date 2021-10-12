@@ -66,6 +66,9 @@ class SlotAttentionMethod(pl.LightningModule):
         logs = {
             "avg_val_loss": avg_loss,
         }
+        if self.model.use_entropy_loss:
+            avg_entropy = torch.stack([x['entropy'] for x in outputs]).mean()
+            logs['avg_val_entropy'] = avg_entropy
         self.log_dict(logs, sync_dist=True)
         print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))
 

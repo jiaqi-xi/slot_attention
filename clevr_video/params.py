@@ -31,7 +31,5 @@ class SlotAttentionParams:
     use_relu: bool = True
     # MLP hidden size in Slot Attention
     slot_mlp_size = 128
-    # eval epoch interval
-    eval_interval = 1.0
-    # mixed precision training
-    fp16 = False
+    # use self-entropy loss to masks
+    use_entropy_loss = False
