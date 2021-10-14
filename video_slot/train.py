@@ -92,7 +92,7 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     # saves a file like: 'path/to/ckp/CLEVRVideo001-val_loss=0.0032.ckpt'
     ckp_path = "./checkpoint/" \
-        f"{args.params + '-fp16' if args.fp16 else args.params}-{SLURM_JOB_ID}"
+        f"{args.params + '-fp16' if args.fp16 else args.params}/{SLURM_JOB_ID}"
     checkpoint_callback = ModelCheckpoint(
         monitor="avg_val_loss",
         dirpath=ckp_path,
