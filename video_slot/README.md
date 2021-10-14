@@ -9,4 +9,4 @@ In order to enforce temporal consistency, I've implemented several possible solu
 
 
 TBH I don't really think future prediction or perceptual loss can really solve the problem. Should try something like video feature extraction network (e.g. S3D), or ConvLSTM in the future.
-A most naive idea is to initialize `slot_{t+1}` with the slot feature at time `t`. By doing so, it's similar to that we regard `slot` as the hidden_state in a LSTM, the `slot-recon` and `mask` as the output of LSTM. Will try that out in the future.
+A most naive idea is to initialize `slot_{t+1}` with the slot feature at time `t`. By doing so, it's similar to that we regard `slot` as the hidden_state in a LSTM, the `slot-recon` and `mask` as the output of LSTM. I believe the [Neural Expectation Maximization (N-EM)](https://arxiv.org/pdf/1708.03498.pdf) paper does similar thing (of course there should be many other papers). Will try that out in the future.

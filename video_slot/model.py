@@ -452,8 +452,8 @@ class PerceptualLoss(nn.Module):
         Should be mask * recon + (1 - mask)
         """
         assert len(x_prev.shape) == len(x_future.shape) == 4
-        assert -1. <= x_prev.min() <= 1.
-        assert -1. <= x_future.min() <= 1.
+        x_prev = torch.clamp(x_prev, min=-1., max=1.)
+        x_future = torch.clamp(x_future, min=-1., max=1.)
         loss = self.loss_fn(x_prev, x_future).mean()
         return {
             'pred_loss': loss,
