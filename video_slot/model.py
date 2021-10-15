@@ -30,7 +30,7 @@ class SlotAttention(nn.Module):
                  mlp_hidden_size,
                  slot_agnostic=True,
                  random_slot=True,
-                 epsilon=1e-8):
+                 epsilon=1e-6):
         super().__init__()
         self.in_features = in_features
         self.num_iterations = num_iterations

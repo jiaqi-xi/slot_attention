@@ -8,6 +8,18 @@ from utils import Tensor, assert_shape, build_grid, conv_transpose_out_shape
 
 
 class SlotAttention(nn.Module):
+    """Slot attention module that iteratively performs cross-attention.
+
+    Args:
+        slot_agnostic (bool): If True, all slots share trained embedding.
+            If False, we train embeddings seperately for each slot.
+            Defaults to True (as in the paper).
+        random_slot (bool): If True, we train mu and sigma for slot embedding,
+            and sample slot from the Gaussian when forward pass. If False, we
+            train slot embedding itself (similar to the learnable positional
+            embedding in DETR), so that we use the same embedding to interact
+            with input image features. Defaults to True (as in the paper).
+    """
 
     def __init__(self,
                  in_features,
@@ -15,6 +27,8 @@ class SlotAttention(nn.Module):
                  num_slots,
                  slot_size,
                  mlp_hidden_size,
+                 slot_agnostic=True,
+                 random_slot=True,
                  epsilon=1e-6):
         super().__init__()
         self.in_features = in_features
@@ -22,6 +36,8 @@ class SlotAttention(nn.Module):
         self.num_slots = num_slots
         self.slot_size = slot_size  # number of hidden layers in slot dimensions
         self.mlp_hidden_size = mlp_hidden_size
+        self.slot_agnostic = slot_agnostic
+        self.random_slot = random_slot
         self.epsilon = epsilon
 
         self.norm_inputs = nn.LayerNorm(self.in_features)
@@ -42,18 +58,31 @@ class SlotAttention(nn.Module):
             nn.Linear(self.mlp_hidden_size, self.slot_size),
         )
 
-        self.register_buffer(
-            "slots_mu",
-            nn.init.xavier_uniform_(
-                torch.zeros((1, 1, self.slot_size)),
-                gain=nn.init.calculate_gain("linear")),
-        )
-        self.register_buffer(
-            "slots_log_sigma",
-            nn.init.xavier_uniform_(
-                torch.zeros((1, 1, self.slot_size)),
-                gain=nn.init.calculate_gain("linear")),
-        )
+        trainable_slot_num = 1 if self.slot_agnostic else self.num_slots
+        if self.random_slot:
+            # train the mean and std of slot embedding
+            self.register_buffer(
+                "slots_mu",
+                nn.init.xavier_uniform_(
+                    torch.zeros((1, trainable_slot_num, self.slot_size)),
+                    gain=nn.init.calculate_gain("linear")),
+            )
+            self.register_buffer(
+                "slots_log_sigma",
+                nn.init.xavier_uniform_(
+                    torch.zeros((1, trainable_slot_num, self.slot_size)),
+                    gain=nn.init.calculate_gain("linear")),
+            )
+        else:
+            # train slot embedding itself
+            # should definitely be one trainable embedding for each slot
+            assert not slot_agnostic, 'cannot use the same emb for each slot!'
+            self.register_buffer(
+                "slots_mu",
+                nn.init.xavier_normal_(  # TODO: mind the init method here?
+                    torch.zeros((1, self.num_slots, self.slot_size)),
+                    gain=nn.init.calculate_gain("linear")),
+            )
 
     def forward(self, inputs: Tensor):
         # `inputs` has shape [batch_size, num_inputs, inputs_size].
@@ -65,9 +94,15 @@ class SlotAttention(nn.Module):
         v = self.project_v(inputs)
 
         # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
-        slots_init = torch.randn((batch_size, self.num_slots, self.slot_size))
-        slots_init = slots_init.type_as(inputs)
-        slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
+        if self.random_slot:
+            # sample from Gaussian with learned mean and std
+            slots_init = torch.randn(
+                (batch_size, self.num_slots, self.slot_size))
+            slots_init = slots_init.type_as(inputs)
+            slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
+        else:
+            # use the learned embedding itself, no sampling, no randomness
+            slots = self.slots_mu.repeat(batch_size, 1, 1)
 
         # Multiple rounds of attention.
         for _ in range(self.num_iterations):
@@ -117,6 +152,8 @@ class SlotAttentionModel(nn.Module):
         empty_cache: bool = False,
         use_relu: bool = False,  # TODO: official code use ReLU
         slot_mlp_size: int = 128,
+        slot_agnostic=True,
+        random_slot=True,
         use_entropy_loss: bool = False,
     ):
         super().__init__()
@@ -219,6 +256,8 @@ class SlotAttentionModel(nn.Module):
             num_slots=self.num_slots,
             slot_size=self.slot_size,
             mlp_hidden_size=slot_mlp_size,
+            slot_agnostic=slot_agnostic,
+            random_slot=random_slot,
         )
 
         self.use_entropy_loss = use_entropy_loss  # -p*log(p)

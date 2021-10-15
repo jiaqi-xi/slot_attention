@@ -33,3 +33,7 @@ class SlotAttentionParams:
     slot_mlp_size = 128
     # use self-entropy loss to masks
     use_entropy_loss = False
+    random_slot = True
+    # whether each slot shares one set of learned parameters
+    slot_agnostic = True
+

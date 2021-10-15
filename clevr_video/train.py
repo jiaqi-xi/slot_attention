@@ -61,6 +61,8 @@ def main(params: Optional[SlotAttentionParams] = None):
         empty_cache=params.empty_cache,
         use_relu=params.use_relu,
         slot_mlp_size=params.slot_mlp_size,
+        slot_agnostic=params.slot_agnostic,
+        random_slot=params.random_slot,
         use_entropy_loss=params.use_entropy_loss,
     )
 
