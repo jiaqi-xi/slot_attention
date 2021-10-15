@@ -39,3 +39,7 @@ class SlotAttentionParams:
     stop_future_grad = False
     # whether and what to use as perceptual loss
     perceptual_loss = 'alex'
+    # whether train mu and sigma or slot embedding, or directly emb itself
+    random_slot = True
+    # whether each slot shares one set of learned parameters
+    slot_agnostic = True

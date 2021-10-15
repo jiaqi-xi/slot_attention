@@ -29,7 +29,7 @@ class SlotAttentionVideoMethod(pl.LightningModule):
 
     def sample_images(self):
         dl = self.datamodule.val_dataloader()
-        perm = torch.randperm(self.params.batch_size)
+        perm = torch.randperm(self.params.val_batch_size)
         idx = perm[:self.params.n_samples]
         batch = next(iter(dl))[idx]
         if self.params.gpus > 0:
