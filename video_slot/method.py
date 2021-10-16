@@ -39,17 +39,18 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         bs, clip, C, H, W = batch.shape[:]
         train_output = self.model.loss_function(batch.view(-1, C, H, W))
         train_loss = {'loss': train_output['loss']}
-        # masks: [B*clip, num_slots, 1, H, W]
-        # slots: [B*clip, num_slots, C, H, W]
-        slots, masks = train_output['slots'], train_output['masks']
-        # get [B*(clip-1)*num_slots, C', H, W] input and gt
-        prev_input, future_gt = self._prepare_predictor_data(
-            masks if self.pred_mask else slots, bs, clip)
-        if self.stop_future_grad:
-            future_gt = future_gt.detach().clone()
-        pred_loss = self.predictor.loss_function(prev_input, future_gt)
-        pred_loss = {'pred_loss': pred_loss['pred_loss']}
-        train_loss.update(pred_loss)
+        if self.predictor is not None:
+            # masks: [B*clip, num_slots, 1, H, W]
+            # slots: [B*clip, num_slots, C, H, W]
+            slots, masks = train_output['slots'], train_output['masks']
+            # get [B*(clip-1)*num_slots, C', H, W] input and gt
+            prev_input, future_gt = self._prepare_predictor_data(
+                masks if self.pred_mask else slots, bs, clip)
+            if self.stop_future_grad:
+                future_gt = future_gt.detach().clone()
+            pred_loss = self.predictor.loss_function(prev_input, future_gt)
+            pred_loss = {'pred_loss': pred_loss['pred_loss']}
+            train_loss.update(pred_loss)
         logs = {key: val.item() for key, val in train_loss.items()}
         self.log_dict(logs, sync_dist=True)
         return train_loss
@@ -58,17 +59,18 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         bs, clip, C, H, W = batch.shape[:]
         val_output = self.model.loss_function(batch.view(-1, C, H, W))
         val_loss = {'loss': val_output['loss']}
-        # masks: [B*clip, num_slots, 1, H, W]
-        # slots: [B*clip, num_slots, C, H, W]
-        slots, masks = val_output['slots'], val_output['masks']
-        # get [B*(clip-1)*num_slots, C', H, W] input and gt
-        prev_input, future_gt = self._prepare_predictor_data(
-            masks if self.pred_mask else slots, bs, clip)
-        if self.stop_future_grad:
-            future_gt = future_gt.detach().clone()
-        pred_loss = self.predictor.loss_function(prev_input, future_gt)
-        pred_loss = {'pred_loss': pred_loss['pred_loss']}
-        val_loss.update(pred_loss)
+        if self.predictor is not None:
+            # masks: [B*clip, num_slots, 1, H, W]
+            # slots: [B*clip, num_slots, C, H, W]
+            slots, masks = val_output['slots'], val_output['masks']
+            # get [B*(clip-1)*num_slots, C', H, W] input and gt
+            prev_input, future_gt = self._prepare_predictor_data(
+                masks if self.pred_mask else slots, bs, clip)
+            if self.stop_future_grad:
+                future_gt = future_gt.detach().clone()
+            pred_loss = self.predictor.loss_function(prev_input, future_gt)
+            pred_loss = {'pred_loss': pred_loss['pred_loss']}
+            val_loss.update(pred_loss)
         return val_loss
 
     def validation_epoch_end(self, outputs):
@@ -125,7 +127,10 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         # get [B*(clip-1)*num_slots, C', H, W] input and gt
         prev_input, future_gt = self._prepare_predictor_data(
             masks if self.pred_mask else slots, bs, clip)
-        pred_future = self.predictor.forward(prev_input)
+        if self.predictor is not None:
+            pred_future = self.predictor.forward(prev_input)
+        else:
+            pred_future = prev_input
         future_gt = future_gt.view(bs * (clip - 1), num_slots, -1, H, W)
         pred_future = pred_future.view(bs * (clip - 1), num_slots, -1, H, W)
         pred_gt = torch.cat(

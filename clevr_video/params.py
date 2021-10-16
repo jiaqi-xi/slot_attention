@@ -36,4 +36,3 @@ class SlotAttentionParams:
     random_slot = True
     # whether each slot shares one set of learned parameters
     slot_agnostic = True
-

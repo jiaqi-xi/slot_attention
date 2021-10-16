@@ -85,7 +85,7 @@ class SlotAttention(nn.Module):
                     gain=nn.init.calculate_gain("linear")),
             )
 
-    def forward(self, inputs: Tensor):
+    def forward(self, inputs: Tensor, slots_prev=None):
         # `inputs` has shape [batch_size, num_inputs, inputs_size].
         batch_size, num_inputs, inputs_size = inputs.shape
         inputs = self.norm_inputs(inputs)  # Apply layer norm to the input.
@@ -94,16 +94,20 @@ class SlotAttention(nn.Module):
         # Shape: [batch_size, num_inputs, slot_size].
         v = self.project_v(inputs)
 
-        # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
-        if self.random_slot:
-            # sample from Gaussian with learned mean and std
-            slots_init = torch.randn(
-                (batch_size, self.num_slots, self.slot_size))
-            slots_init = slots_init.type_as(inputs)
-            slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
+        if slots_prev is None:
+            # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
+            if self.random_slot:
+                # sample from Gaussian with learned mean and std
+                slots_init = torch.randn(
+                    (batch_size, self.num_slots, self.slot_size))
+                slots_init = slots_init.type_as(inputs)
+                slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
+            else:
+                # use the learned embedding itself, no sampling, no randomness
+                slots = self.slots_mu.repeat(batch_size, 1, 1)
         else:
-            # use the learned embedding itself, no sampling, no randomness
-            slots = self.slots_mu.repeat(batch_size, 1, 1)
+            # directly use the provided previous slots
+            slots = slots_prev
 
         # Multiple rounds of attention.
         for _ in range(self.num_iterations):
@@ -144,17 +148,17 @@ class SlotAttentionModel(nn.Module):
         self,
         resolution: Tuple[int, int],
         num_slots: int,
-        num_iterations,
+        num_iterations: int,
         in_channels: int = 3,
         kernel_size: int = 5,
         slot_size: int = 64,
         hidden_dims: Tuple[int, ...] = (64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
-        empty_cache=False,
-        use_relu=False,  # TODO: official code use ReLU
-        slot_mlp_size=128,
-        slot_agnostic=True,
-        random_slot=True,
+        empty_cache: bool = False,
+        use_relu: bool = False,  # TODO: official code use ReLU
+        slot_mlp_size: int = 128,
+        slot_agnostic: bool = True,
+        random_slot: bool = True,
     ):
         super().__init__()
         self.resolution = resolution

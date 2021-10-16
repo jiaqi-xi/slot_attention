@@ -76,7 +76,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params
     logger = pl_loggers.WandbLogger(
-        project="slot-attention-clevr6-video-seq",
+        project="slot-attention-clevr6-video",
         name=logger_name,
         id=logger_name)  # we assume only run one exp per one params setting
 

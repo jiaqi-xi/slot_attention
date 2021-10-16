@@ -13,6 +13,7 @@ from data import CLEVRVideoFrameDataModule
 from method import SlotAttentionVideoMethod as SlotAttentionMethod
 from utils import VideoLogCallback, ImageLogCallback, rescale
 from model import SlotAttentionModel, ConvAutoEncoder, PerceptualLoss
+from video_model import RecurrentSlotAttentionModel
 from params import SlotAttentionParams
 
 
@@ -59,23 +60,39 @@ def main(params: Optional[SlotAttentionParams] = None):
         f"Training set size (images must have {params.num_slots - 1} "
         "objects):", len(clevr_datamodule.train_dataset))
 
-    model = SlotAttentionModel(
-        resolution=params.resolution,
-        num_slots=params.num_slots,
-        num_iterations=params.num_iterations,
-        empty_cache=params.empty_cache,
-        use_relu=params.use_relu,
-        slot_mlp_size=params.slot_mlp_size,
-        slot_agnostic=params.slot_agnostic,
-        random_slot=params.random_slot,
-    )
+    if params.recurrent_slot_attention:
+        model = RecurrentSlotAttentionModel(
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            num_clips=params.sample_clip_num,
+            empty_cache=params.empty_cache,
+            use_relu=params.use_relu,
+            slot_mlp_size=params.slot_mlp_size,
+            slot_agnostic=params.slot_agnostic,
+            random_slot=params.random_slot,
+        )
+    else:
+        model = SlotAttentionModel(
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            empty_cache=params.empty_cache,
+            use_relu=params.use_relu,
+            slot_mlp_size=params.slot_mlp_size,
+            slot_agnostic=params.slot_agnostic,
+            random_slot=params.random_slot,
+        )
     if params.perceptual_loss:
         predictor = PerceptualLoss(params.perceptual_loss)
     else:
+        '''
         predictor = ConvAutoEncoder(
             in_channels=1 if params.pred_mask else 3,
             num_slots=params.num_slots,
             use_softmax=params.pred_mask)
+        '''
+        predictor = None
 
     method = SlotAttentionMethod(
         model=model,
