@@ -39,6 +39,11 @@ class SlotAttentionParams:
     stop_future_grad: bool = False
     # whether and what to use as perceptual loss
     perceptual_loss: str = 'alex'
+    # whether set the slot parameters as learnable (to be updated by BP)
+    # TODO: should be True in official code!!!
+    # TODO: but this codebase set it as False and I've done lots of exp using
+    # TODO: it so far... So I set False as the default value
+    learnable_slot = False
     # whether train mu and sigma or slot embedding, or directly emb itself
     random_slot: bool = True
     # whether each slot shares one set of learned parameters

@@ -30,9 +30,15 @@ class SlotAttentionParams:
     # whether use relu in SlotModel
     use_relu: bool = True
     # MLP hidden size in Slot Attention
-    slot_mlp_size = 128
+    slot_mlp_size: int = 128
     # use self-entropy loss to masks
-    use_entropy_loss = False
-    random_slot = True
+    use_entropy_loss: bool = False
+    # whether set the slot parameters as learnable (to be updated by BP)
+    # TODO: should be True in official code!!!
+    # TODO: but this codebase set it as False and I've done lots of exp using
+    # TODO: it so far... So I set False as the default value
+    learnable_slot = False
+    # whether train mu and sigma or slot embedding, or directly emb itself
+    random_slot: bool = True
     # whether each slot shares one set of learned parameters
-    slot_agnostic = True
+    slot_agnostic: bool = True

@@ -27,6 +27,7 @@ class SlotAttention(nn.Module):
                  num_slots,
                  slot_size,
                  mlp_hidden_size,
+                 learnable_slot=False,
                  slot_agnostic=True,
                  random_slot=True,
                  epsilon=1e-6):
@@ -36,6 +37,7 @@ class SlotAttention(nn.Module):
         self.num_slots = num_slots
         self.slot_size = slot_size  # number of hidden layers in slot dimensions
         self.mlp_hidden_size = mlp_hidden_size
+        self.learnable_slot = learnable_slot
         self.slot_agnostic = slot_agnostic
         self.random_slot = random_slot
         self.epsilon = epsilon
@@ -59,15 +61,17 @@ class SlotAttention(nn.Module):
         )
 
         trainable_slot_num = 1 if self.slot_agnostic else self.num_slots
+        slot_init_func = self.register_parameter if \
+            learnable_slot else self.register_buffer
         if self.random_slot:
             # train the mean and std of slot embedding
-            self.register_buffer(
+            slot_init_func(
                 "slots_mu",
                 nn.init.xavier_uniform_(
                     torch.zeros((1, trainable_slot_num, self.slot_size)),
                     gain=nn.init.calculate_gain("linear")),
             )
-            self.register_buffer(
+            slot_init_func(
                 "slots_log_sigma",
                 nn.init.xavier_uniform_(
                     torch.zeros((1, trainable_slot_num, self.slot_size)),
@@ -77,7 +81,7 @@ class SlotAttention(nn.Module):
             # train slot embedding itself
             # should definitely be one trainable embedding for each slot
             assert not slot_agnostic, 'cannot use the same emb for each slot!'
-            self.register_buffer(
+            slot_init_func(
                 "slots_mu",
                 nn.init.xavier_normal_(  # TODO: mind the init method here?
                     torch.zeros((1, self.num_slots, self.slot_size)),
@@ -143,7 +147,7 @@ class SlotAttentionModel(nn.Module):
         self,
         resolution: Tuple[int, int],
         num_slots: int,
-        num_iterations,
+        num_iterations: int,
         in_channels: int = 3,
         kernel_size: int = 5,
         slot_size: int = 64,
@@ -152,8 +156,9 @@ class SlotAttentionModel(nn.Module):
         empty_cache: bool = False,
         use_relu: bool = False,  # TODO: official code use ReLU
         slot_mlp_size: int = 128,
-        slot_agnostic=True,
-        random_slot=True,
+        learnable_slot: bool = False,
+        slot_agnostic: bool = True,
+        random_slot: bool = True,
         use_entropy_loss: bool = False,
     ):
         super().__init__()
@@ -256,6 +261,7 @@ class SlotAttentionModel(nn.Module):
             num_slots=self.num_slots,
             slot_size=self.slot_size,
             mlp_hidden_size=slot_mlp_size,
+            learnable_slot=learnable_slot,
             slot_agnostic=slot_agnostic,
             random_slot=random_slot,
         )

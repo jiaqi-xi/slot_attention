@@ -33,6 +33,7 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         empty_cache: bool = False,
         use_relu: bool = False,  # TODO: official code use ReLU
         slot_mlp_size: int = 128,
+        learnable_slot=False,
         slot_agnostic: bool = True,
         random_slot: bool = True,
     ):
@@ -40,7 +41,8 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
               self).__init__(resolution, num_slots, num_iterations,
                              in_channels, kernel_size, slot_size, hidden_dims,
                              decoder_resolution, empty_cache, use_relu,
-                             slot_mlp_size, slot_agnostic, random_slot)
+                             slot_mlp_size, learnable_slot, slot_agnostic,
+                             random_slot)
 
         self.num_clips = num_clips
 

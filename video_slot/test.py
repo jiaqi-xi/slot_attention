@@ -28,6 +28,7 @@ def main(params=None):
             empty_cache=params.empty_cache,
             use_relu=params.use_relu,
             slot_mlp_size=params.slot_mlp_size,
+            learnable_slot=params.learnable_slot,
             slot_agnostic=params.slot_agnostic,
             random_slot=params.random_slot,
         )
@@ -39,6 +40,7 @@ def main(params=None):
             empty_cache=params.empty_cache,
             use_relu=params.use_relu,
             slot_mlp_size=params.slot_mlp_size,
+            learnable_slot=params.learnable_slot,
             slot_agnostic=params.slot_agnostic,
             random_slot=params.random_slot,
         )
@@ -88,7 +90,7 @@ def inference(model, dataset, num=3):
     results = []
     for idx in data_idx:
         video = dataset.__getitem__(idx).float().cuda()
-        if isinstance(model, RecurrentSlotAttentionModel):
+        if isinstance(model.model, RecurrentSlotAttentionModel):
             output = model(video, num_clips=video.shape[0])
         else:
             output = model(video)
