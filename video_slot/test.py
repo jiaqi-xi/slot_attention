@@ -88,7 +88,11 @@ def inference(model, dataset, num=3):
     results = []
     for idx in data_idx:
         video = dataset.__getitem__(idx).float().cuda()
-        recon_combined, recons, masks, slots = model(video)
+        if isinstance(model, RecurrentSlotAttentionModel):
+            output = model(video, num_clips=video.shape[0])
+        else:
+            output = model(video)
+        recon_combined, recons, masks, slots = output
         out = to_rgb_from_tensor(
             torch.cat(
                 [
