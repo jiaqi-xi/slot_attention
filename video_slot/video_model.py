@@ -45,7 +45,6 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         self.num_clips = num_clips
 
     def forward(self, x, num_clips=None):
-        """TODO: main difference, x is of shape [B, num_clips, C, H, W]"""
         if self.empty_cache:
             torch.cuda.empty_cache()
 

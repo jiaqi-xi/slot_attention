@@ -4,6 +4,7 @@ from torch import optim
 from torchvision import utils as vutils
 
 from model import SlotAttentionModel, ConvAutoEncoder
+from video_model import RecurrentSlotAttentionModel
 from params import SlotAttentionParams
 from utils import Tensor, to_rgb_from_tensor
 
@@ -75,11 +76,13 @@ class SlotAttentionVideoMethod(pl.LightningModule):
 
     def validation_epoch_end(self, outputs):
         avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
-        avg_pred_loss = torch.stack([x["pred_loss"] for x in outputs]).mean()
         logs = {
             "avg_val_loss": avg_loss,
-            "avg_val_pred_loss": avg_pred_loss,
         }
+        if self.predictor is not None:
+            avg_pred_loss = torch.stack([x["pred_loss"]
+                                         for x in outputs]).mean()
+            logs['avg_val_pred_loss'] = avg_pred_loss
         self.log_dict(logs, sync_dist=True)
         print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))
 
@@ -159,10 +162,14 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         results = []
         for idx in sampled_idx:
             idx = idx.item()
-            video = dst.__getitem__(idx)  # [B, C, H, W]
+            video = dst.__getitem__(idx)  # [num_clips, C, H, W]
             if self.params.gpus > 0:
                 video = video.to(self.device)
-            recon_combined, recons, masks, slots = self.model.forward(video)
+            if isinstance(self.model, RecurrentSlotAttentionModel):
+                output = self.model.forward(video, num_clips=video.shape[0])
+            else:
+                output = self.model.forward(video)
+            recon_combined, recons, masks, slots = output
             # combine images in a nice way so we can display all outputs in one grid, output rescaled to be between 0 and 1
             out = to_rgb_from_tensor(
                 torch.cat(
