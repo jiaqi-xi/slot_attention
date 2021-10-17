@@ -102,9 +102,17 @@ class SlotAttention(nn.Module):
 
         # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
         if self.random_slot:
-            # sample from Gaussian with learned mean and std
-            slots_init = torch.randn(
-                (batch_size, self.num_slots, self.slot_size))
+            # if in testing mode, fix random seed to get same slot embedding
+            if not self.training:
+                torch.manual_seed(0)
+                torch.cuda.manual_seed_all(0)
+                slots_init = torch.randn(
+                    (1, self.num_slots,
+                     self.slot_size)).repeat(batch_size, 1, 1)
+            # in training mode, sample from Gaussian with learned mean and std
+            else:
+                slots_init = torch.randn(
+                    (batch_size, self.num_slots, self.slot_size))
             slots_init = slots_init.type_as(inputs)
             slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
         else:

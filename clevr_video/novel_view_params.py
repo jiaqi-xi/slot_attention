@@ -14,7 +14,7 @@ class SlotAttentionParams:
     num_iterations: int = 3
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_novel_view_images"
     gpus: int = 1
-    max_epochs: int = 8
+    max_epochs: int = 200
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5
     weight_decay: float = 0.0

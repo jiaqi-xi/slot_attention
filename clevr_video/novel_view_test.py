@@ -92,10 +92,6 @@ if __name__ == "__main__":
     torch.cuda.manual_seed_all(0)
     parser = argparse.ArgumentParser(description='Train Slot Attention')
     parser.add_argument('--params', type=str, default='params')
-    parser.add_argument(
-        '--data-root',
-        type=str,
-        default='/scratch/ssd004/scratch/ziyiwu/data/CLEVR_novel_view_images')
     parser.add_argument('--weight', type=str, required=True)
     parser.add_argument('--test-num', type=int, default=5)
     # TODO: I didn't find improvement using num-iter=5 as stated in the paper
