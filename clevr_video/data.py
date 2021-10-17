@@ -1,7 +1,6 @@
 import json
 import os
 import cv2
-from PIL import Image
 from typing import Callable
 from typing import List
 from typing import Optional
@@ -178,46 +177,3 @@ class CLEVRTransforms(object):
 
     def __call__(self, input, *args, **kwargs):
         return self.transforms(input)
-
-
-class CLEVRNovelViewImageDataset(Dataset):
-    """Dataset that loads paired images from CLEVR novel view image."""
-
-    def __init__(
-        self,
-        data_root: str,
-        clevr_transforms: Callable,
-    ):
-        super().__init__()
-        self.data_root = data_root
-        self.clevr_transforms = clevr_transforms
-        self.data_path = os.path.join(data_root, "images")
-        assert os.path.exists(
-            self.data_root), f"Path {self.data_root} does not exist"
-        assert os.path.exists(
-            self.data_path), f"Path {self.data_path} does not exist"
-
-        self.pairs = self.get_pairs()
-        self.num_pairs = len(self.files)
-
-    def __getitem__(self, index: int):
-        """Load one video and get only one frame from it"""
-        pair_name = self.files[index]
-        img1 = os.path.join(self.data_path, f'{pair_name}00.png')
-        img2 = os.path.join(self.data_path, f'{pair_name}01.png')
-        img1 = Image.open(img1)
-        img2 = Image.open(img2)
-        img1 = img1.convert("RGB")
-        img2 = img2.convert("RGB")
-        return torch.stack(
-            [self.clevr_transforms(img) for img in [img1, img2]], dim=0)
-
-    def __len__(self):
-        return self.num_pairs
-
-    def get_pairs(self):
-        all_files = os.listdir(self.data_path)
-        all_files = list(set([file[:-6] for file in all_files]))
-        # file is like 'CLEVR_new_000007'
-        # so a pair is f'{file}00.png' and f'{file}01.png'
-        return all_files

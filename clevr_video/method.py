@@ -34,6 +34,10 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         batch = next(iter(dl))[idx]
         if self.params.gpus > 0:
             batch = batch.to(self.device)
+        if len(batch.shape) == 5:
+            # TODO: for the novel view image dataset
+            _, _, C, H, W = batch.shape
+            batch = batch.reshape(-1, C, H, W)
         recon_combined, recons, masks, slots = self.model.forward(batch)
 
         # combine images in a nice way so we can display all outputs in one grid, output rescaled to be between 0 and 1
@@ -102,6 +106,10 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         return video
 
     def validation_step(self, batch, batch_idx, optimizer_idx=0):
+        if len(batch.shape) == 5:
+            # TODO: for the novel view image dataset
+            _, _, C, H, W = batch.shape
+            batch = batch.reshape(-1, C, H, W)
         val_loss = self.model.loss_function(batch)
         return val_loss
 

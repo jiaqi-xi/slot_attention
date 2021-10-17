@@ -13,7 +13,7 @@ from torchvision import utils as vutils
 from novel_view_data import CLEVRNovelViewImagePairDataset
 from method import SlotAttentionVideoMethod as SlotAttentionMethod
 from model import SlotAttentionModel
-from novel_view_params import SlotAttentionParams
+from params import SlotAttentionParams
 from utils import rescale, to_rgb_from_tensor
 
 
@@ -39,8 +39,7 @@ def main(params=None):
         transforms.Resize(params.resolution),
     ])
 
-    test_dst = CLEVRNovelViewImagePairDataset(params.data_root,
-                                              clevr_transforms)
+    test_dst = CLEVRNovelViewImagePairDataset(args.data_root, clevr_transforms)
 
     model = SlotAttentionMethod(model=model, datamodule=None, params=params)
     model.load_state_dict(torch.load(args.weight)['state_dict'], strict=True)
@@ -93,6 +92,10 @@ if __name__ == "__main__":
     torch.cuda.manual_seed_all(0)
     parser = argparse.ArgumentParser(description='Train Slot Attention')
     parser.add_argument('--params', type=str, default='params')
+    parser.add_argument(
+        '--data-root',
+        type=str,
+        default='/scratch/ssd004/scratch/ziyiwu/data/CLEVR_novel_view_images')
     parser.add_argument('--weight', type=str, required=True)
     parser.add_argument('--test-num', type=int, default=5)
     # TODO: I didn't find improvement using num-iter=5 as stated in the paper
