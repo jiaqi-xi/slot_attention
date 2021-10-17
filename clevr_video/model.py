@@ -67,15 +67,17 @@ class SlotAttention(nn.Module):
             # train the mean and std of slot embedding
             slot_init_func(
                 "slots_mu",
-                nn.init.xavier_uniform_(
-                    torch.zeros((1, trainable_slot_num, self.slot_size)),
-                    gain=nn.init.calculate_gain("linear")),
+                torch.nn.Parameter(
+                    nn.init.xavier_uniform_(
+                        torch.zeros((1, trainable_slot_num, self.slot_size)),
+                        gain=nn.init.calculate_gain("linear"))),
             )
             slot_init_func(
                 "slots_log_sigma",
-                nn.init.xavier_uniform_(
-                    torch.zeros((1, trainable_slot_num, self.slot_size)),
-                    gain=nn.init.calculate_gain("linear")),
+                torch.nn.Parameter(
+                    nn.init.xavier_uniform_(
+                        torch.zeros((1, trainable_slot_num, self.slot_size)),
+                        gain=nn.init.calculate_gain("linear"))),
             )
         else:
             # train slot embedding itself
@@ -83,9 +85,10 @@ class SlotAttention(nn.Module):
             assert not slot_agnostic, 'cannot use the same emb for each slot!'
             slot_init_func(
                 "slots_mu",
-                nn.init.xavier_normal_(  # TODO: mind the init method here?
-                    torch.zeros((1, self.num_slots, self.slot_size)),
-                    gain=nn.init.calculate_gain("linear")),
+                torch.nn.Parameter(
+                    nn.init.xavier_normal_(  # TODO: mind the init method here?
+                        torch.zeros((1, self.num_slots, self.slot_size)),
+                        gain=nn.init.calculate_gain("linear"))),
             )
 
     def forward(self, inputs: Tensor):
