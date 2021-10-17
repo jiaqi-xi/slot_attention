@@ -106,12 +106,14 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params
+    if SLURM_JOB_ID:
+        logger_name = f'{logger_name}-{SLURM_JOB_ID}'
     logger = pl_loggers.WandbLogger(
         project="slot-attention-clevr6-video-seq",
         name=logger_name,
         id=logger_name)  # we assume only run one exp per one params setting
 
-    # saves a file like: 'path/to/ckp/CLEVRVideo001-val_loss=0.0032.ckpt'
+    # saves a file like: 'path/to/ckp/CLEVRVideoSlot001-val_loss=0.0032.ckpt'
     ckp_path = "./checkpoint/" \
         f"{args.params + '-fp16' if args.fp16 else args.params}/{SLURM_JOB_ID}"
     checkpoint_callback = ModelCheckpoint(

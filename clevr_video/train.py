@@ -76,6 +76,8 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params
+    if SLURM_JOB_ID:
+        logger_name = f'{logger_name}-{SLURM_JOB_ID}'
     logger = pl_loggers.WandbLogger(
         project="slot-attention-clevr6-video",
         name=logger_name,
@@ -97,7 +99,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     if os.path.exists(ckp_path):
         ckp_files = os.listdir(ckp_path)
         ckp_files = [ckp for ckp in ckp_files if ckp.startswith('CLEVRVideo')]
-        epoch_num = [int(ckp[20:23]) for ckp in ckp_files]
+        epoch_num = [int(ckp[16:19]) for ckp in ckp_files]
         last_ckp = ckp_files[np.argmax(epoch_num)]
         print(f'INFO: automatically detect checkpoint {last_ckp}')
         args.weight = os.path.join(ckp_path, last_ckp)
