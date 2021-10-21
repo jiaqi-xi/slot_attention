@@ -36,6 +36,7 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         learnable_slot=False,
         slot_agnostic: bool = True,
         random_slot: bool = True,
+        stop_recur_slot_grad: bool = False,
     ):
         super(RecurrentSlotAttentionModel,
               self).__init__(resolution, num_slots, num_iterations,
@@ -45,6 +46,7 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
                              random_slot)
 
         self.num_clips = num_clips
+        self.stop_recur_slot_grad = stop_recur_slot_grad
 
     def forward(self, x, num_clips=None):
         if self.empty_cache:
@@ -79,6 +81,9 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
             one_slot = self.slot_attention(encoder_out[:, clip_idx], slot_prev)
             slots.append(one_slot)
             slot_prev = one_slot
+            # optionally stop the grad of slot_prev
+            if self.stop_recur_slot_grad:
+                slot_prev = slot_prev.detach()
         # [batch_size*num_clips, self.num_slots, self.slot_size]
         slots = torch.stack(
             slots, dim=1).reshape(-1, self.num_slots, self.slot_size)

@@ -72,6 +72,7 @@ def main(params: Optional[SlotAttentionParams] = None):
             learnable_slot=params.learnable_slot,
             slot_agnostic=params.slot_agnostic,
             random_slot=params.random_slot,
+            stop_recur_slot_grad=params.stop_recur_slot_grad,
         )
     else:
         model = SlotAttentionModel(

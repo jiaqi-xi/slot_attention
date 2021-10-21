@@ -50,3 +50,4 @@ class SlotAttentionParams:
     slot_agnostic: bool = True
     # perform recurrent slot-attention
     recurrent_slot_attention: bool = False
+    stop_recur_slot_grad: bool = False
