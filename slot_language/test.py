@@ -4,47 +4,58 @@ import argparse
 import numpy as np
 
 import torch
-from torchvision import transforms
 from torchvision import utils as vutils
 
-from data import CLEVRVideoFrameDataModule
-from method import SlotAttentionVideoMethod as SlotAttentionMethod
+import clip
+from text_model import Text2Slot
+from data import CLEVRVisionLanguageCLIPDataModule
+from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from model import SlotAttentionModel
 from params import SlotAttentionParams
-from utils import rescale, to_rgb_from_tensor, save_video
+from utils import to_rgb_from_tensor, save_video
 
 
 def main(params=None):
     if params is None:
         params = SlotAttentionParams()
 
+    clip_model, clip_transforms = clip.load(params.clip_arch)
+    text2slot_model = Text2Slot(
+        params.clip_text_channel,
+        params.num_slots,
+        params.slot_size,
+        params.text2slot_hidden_sizes,
+        predict_dist=params.predict_slot_dist,
+        use_bn=False)
+
     model = SlotAttentionModel(
+        clip_model=clip_model,
+        text2slot_model=text2slot_model,
         resolution=params.resolution,
         num_slots=params.num_slots,
         num_iterations=params.num_iterations,
+        enc_channels=params.clip_vision_channel,
+        enc_global_feats=params.clip_global_feats,
+        enc_pos_enc=params.enc_pos_enc,
+        slot_size=params.slot_size,
+        dec_kernel_size=params.dec_kernel_size,
+        dec_hidden_dims=params.dec_channels,
+        dec_resolution=params.dec_resolution,
         empty_cache=params.empty_cache,
-        use_relu=params.use_relu,
         slot_mlp_size=params.slot_mlp_size,
-        learnable_slot=params.learnable_slot,
-        slot_agnostic=params.slot_agnostic,
-        random_slot=params.random_slot,
+        use_entropy_loss=params.use_entropy_loss,
     )
 
-    clevr_transforms = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Lambda(rescale),  # rescale between -1 and 1
-        transforms.Resize(params.resolution),
-    ])
-
-    clevr_datamodule = CLEVRVideoFrameDataModule(
+    clevr_datamodule = CLEVRVisionLanguageCLIPDataModule(
         data_root=params.data_root,
-        max_n_objects=params.num_slots - 1,
         train_batch_size=params.batch_size,
         val_batch_size=params.val_batch_size,
-        clevr_transforms=clevr_transforms,
+        clip_transforms=clip_transforms,
+        max_n_objects=params.num_slots - 1,
+        num_workers=params.num_workers,
         num_train_images=params.num_train_images,
         num_val_images=params.num_val_images,
-        num_workers=params.num_workers,
+        fine_grained=params.fine_grained,
     )
 
     model = SlotAttentionMethod(
@@ -67,16 +78,22 @@ def main(params=None):
 
 def inference(model, dataset, num=3):
     dataset.is_video = True
+    dataset.fine_grained = True
     num_data = dataset.num_videos
     data_idx = np.random.choice(num_data, num, replace=False)
     results = []
+    all_texts = []
     for idx in data_idx:
-        video = dataset.__getitem__(idx).float().cuda()
-        recon_combined, recons, masks, slots = model(video)
+        batch = dataset.__getitem__(idx)  # dict with key video, text, raw_text
+        video, text, raw_text = \
+            batch['video'], batch['text'], batch['raw_text']
+        all_texts.append(raw_text)
+        batch = dict(video=video.float().cuda(), text=text.float().cuda())
+        recon_combined, recons, masks, slots = model(batch)
         out = to_rgb_from_tensor(
             torch.cat(
                 [
-                    video.unsqueeze(1),  # original images
+                    batch['video'].unsqueeze(1),  # original images
                     recon_combined.unsqueeze(1),  # reconstructions
                     recons * masks + (1 - masks),  # each slot
                 ],

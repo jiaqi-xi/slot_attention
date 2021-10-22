@@ -125,7 +125,7 @@ if __name__ == "__main__":
     np.random.seed(0)
     torch.manual_seed(0)
     torch.cuda.manual_seed_all(0)
-    parser = argparse.ArgumentParser(description='Train Slot Attention')
+    parser = argparse.ArgumentParser(description='Test Slot Attention')
     parser.add_argument('--params', type=str, default='params')
     parser.add_argument('--weight', type=str, required=True)
     parser.add_argument('--test-num', type=int, default=5)
