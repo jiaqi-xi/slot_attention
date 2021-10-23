@@ -86,14 +86,14 @@ def inference(model, dataset, num=3):
     for idx in data_idx:
         batch = dataset.__getitem__(idx)  # dict with key video, text, raw_text
         video, text, raw_text = \
-            batch['video'], batch['text'], batch['raw_text']
+            batch['video'], batch['text'].unsqueeze(0), batch['raw_text']
         all_texts.append(raw_text)
-        batch = dict(video=video.float().cuda(), text=text.float().cuda())
+        batch = dict(img=video.float().cuda(), text=text.float().cuda())
         recon_combined, recons, masks, slots = model(batch)
         out = to_rgb_from_tensor(
             torch.cat(
                 [
-                    batch['video'].unsqueeze(1),  # original images
+                    batch['img'].unsqueeze(1),  # original images
                     recon_combined.unsqueeze(1),  # reconstructions
                     recons * masks + (1 - masks),  # each slot
                 ],

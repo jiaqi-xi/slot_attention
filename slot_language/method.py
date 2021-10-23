@@ -31,7 +31,7 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
         dl = self.datamodule.val_dataloader()
         perm = torch.randperm(self.params.val_batch_size)
         idx = perm[:self.params.n_samples]
-        batch = next(iter(dl))[idx]
+        batch = {k: v[idx] for k, v in next(iter(dl)).items()}
         if self.params.gpus > 0:
             batch = {k: v.to(self.device) for k, v in batch.items()}
         recon_combined, recons, masks, slots = self.model.forward(batch)
@@ -76,9 +76,9 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
             idx = idx.item()
             batch = dst.__getitem__(idx)  # dict with key video, text, raw_text
             video, text, raw_text = \
-                batch['video'], batch['text'], batch['raw_text']
+                batch['video'], batch['text'].unsqueeze(0), batch['raw_text']
             all_texts.append(raw_text)
-            batch = dict(video=video, text=text)
+            batch = dict(img=video, text=text)
             if self.params.gpus > 0:
                 batch = {k: v.to(self.device) for k, v in batch.items()}
             recon_combined, recons, masks, slots = self.model.forward(batch)
@@ -86,7 +86,7 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
             out = to_rgb_from_tensor(
                 torch.cat(
                     [
-                        batch['video'].unsqueeze(1),  # original images
+                        batch['img'].unsqueeze(1),  # original images
                         recon_combined.unsqueeze(1),  # reconstructions
                         recons * masks + (1 - masks),  # each slot
                     ],
@@ -110,10 +110,6 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
         return video, text
 
     def validation_step(self, batch, batch_idx, optimizer_idx=0):
-        if len(batch.shape) == 5:
-            # TODO: for the novel view image dataset
-            _, _, C, H, W = batch.shape
-            batch = batch.reshape(-1, C, H, W)
         val_loss = self.model.loss_function(batch)
         return val_loss
 

@@ -91,7 +91,8 @@ class SlotAttention(nn.Module):
                 slots_init = torch.randn(
                     (batch_size, self.num_slots, self.slot_size))
             slots_init = slots_init.type_as(inputs)
-            slots = slots_mu + slots_log_sigma.exp() * slots_init
+            slots = slots_mu.unsqueeze(1) + \
+                slots_log_sigma.exp().unsqueeze(1) * slots_init
 
         # Multiple rounds of attention.
         for _ in range(self.num_iterations):
@@ -199,7 +200,7 @@ class SlotAttentionModel(nn.Module):
                         self.dec_hidden_dims[i - 1],
                         kernel_size=self.dec_kernel_size,
                         stride=2,
-                        padding=2,
+                        padding=self.dec_kernel_size // 2,
                         output_padding=1,
                     ),
                     nn.ReLU(),
@@ -221,7 +222,7 @@ class SlotAttentionModel(nn.Module):
                     self.out_features,
                     kernel_size=self.dec_kernel_size,
                     stride=1,
-                    padding=2,
+                    padding=self.dec_kernel_size // 2,
                     output_padding=0,
                 ),
                 nn.ReLU(),
@@ -253,6 +254,7 @@ class SlotAttentionModel(nn.Module):
         """Encode image, potentially add pos enc, apply MLP."""
         encoder_out = self.clip_model.encode_image(
             img, global_feats=self.enc_global_feats, downstream=True)  # BCDD
+        encoder_out = encoder_out.type(self.dtype)
         # may not applying pos_enc because Encoder in CLIP already does so
         if self.enc_pos_enc:
             encoder_out = self.encoder_pos_embedding(encoder_out)
@@ -267,6 +269,7 @@ class SlotAttentionModel(nn.Module):
     def _get_slot_embedding(self, text):
         """Encode text, generate slot embeddings."""
         text_features = self.clip_model.encode_text(text, lin_proj=False)  # BC
+        text_features = text_features.type(self.dtype)
         slot_mu, slot_log_sigma = self.text2slot_model(text_features)
         return slot_mu, slot_log_sigma
 
@@ -305,7 +308,7 @@ class SlotAttentionModel(nn.Module):
 
     def loss_function(self, input):
         recon_combined, recons, masks, slots = self.forward(input)
-        loss = F.mse_loss(recon_combined, input)
+        loss = F.mse_loss(recon_combined, input['img'])
         loss_dict = {
             "loss": loss,
         }
@@ -315,6 +318,10 @@ class SlotAttentionModel(nn.Module):
             entroly_loss = (-masks * torch.log(masks + 1e-6)).sum(1)[0].mean()
             loss_dict['entropy'] = entroly_loss
         return loss_dict
+
+    @property
+    def dtype(self):
+        return self.decoder[0][0].weight.dtype
 
 
 class SoftPositionEmbed(nn.Module):
