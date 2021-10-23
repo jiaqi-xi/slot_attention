@@ -142,6 +142,7 @@ class SlotAttentionModel(nn.Module):
         resolution: Tuple[int, int],
         num_slots: int,
         num_iterations: int,
+        enc_resolution: Tuple[int, int] = (7, 7),
         enc_channels: int = 3,  # output channel of pre-trained encoder
         enc_global_feats: bool = False,  # should use patch features?
         enc_pos_enc: bool = False,  # because CLIP's vision encoder already has?
@@ -157,6 +158,7 @@ class SlotAttentionModel(nn.Module):
         self.resolution = resolution
         self.num_slots = num_slots
         self.num_iterations = num_iterations
+        self.enc_resolution = enc_resolution
         self.enc_channels = enc_channels
         self.enc_global_feats = enc_global_feats
         self.enc_pos_enc = enc_pos_enc
@@ -179,7 +181,7 @@ class SlotAttentionModel(nn.Module):
         # Build Encoder related modules
         if self.enc_pos_enc:
             self.encoder_pos_embedding = SoftPositionEmbed(
-                3, self.enc_channels, self.resolution)
+                3, self.enc_channels, self.enc_resolution)
         self.encoder_out_layer = nn.Sequential(
             nn.Linear(self.enc_channels, self.out_features),
             nn.ReLU(),

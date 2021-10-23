@@ -13,7 +13,7 @@ class SlotAttentionParams:
     slot_size: int = 64
     num_iterations: int = 3
     # MLP hidden size in Slot Attention
-    slot_mlp_size: int = 128
+    slot_mlp_size: int = 128  # FFN after cross attention
     dec_resolution: Tuple[int, int] = (7, 7)
     dec_kernel_size: int = 3
     dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
@@ -22,6 +22,7 @@ class SlotAttentionParams:
 
     # architecture of CLIP pre-trained model
     clip_arch: str = 'ViT-B/32'
+    enc_resolution: Tuple[int, int] = (7, 7)  # (num_patches, num_patches)
     clip_vision_channel: int = 768
     clip_text_channel: int = 512
     clip_global_feats: bool = False

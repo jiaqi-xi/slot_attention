@@ -1,39 +1,29 @@
-# Slot Attention on CLEVR Video dataset
+# Language Guided Slot Attention
 
-## Prerequisites
+The difference with former slot attention:
 
--   PyTorch 1.9.1 with CUDA 11.1
--   PyTorch-Lightning 1.4.9
--   wandb for logging and visualization
--   other packages, see the error output if needed
+-   Replace the simple vision encoder with ViT from pre-trained CLIP
+-   Introduce text as model input, encode text feature with the language branch from pre-trained CLIP. The text is something like `put the red cylinder to the left of the cyan cube`, which include action and the objects involved in it
+-   Instead of learning a `mu` and `sigma` for each slot, we train a model to generate slot initialization from the text feature
 
-After `pip install wandb`, remember to log in so that you can monitor your experiments results on the webpage. First go to https://wandb.ai to sign up an account, then use `wandb login` to login.
+So the biggest problem here is that, what is the supervision signal we have? We only have the reconstruction loss now, but we need semantic constraint, that's our desired model output!
 
-## Data Preparation
+Things that can be tuned now:
 
-Unzip `clevr.tar.gz` to your `DATA_DIR`, then modify [this line](https://github.com/Wuziyi616/slot_attention/blob/8dea9335d34fe95f6ef5d7903a065b99970de549/clevr_video/params.py#L15) to that path.
-
--   `images/` are videos in `avi` format
--   `scenes/` are their corresponding annotations, e.g. how many objects in each video
-
-## Per frame slot attention
-
-To train the model, simply run:
-
-```
-python train.py --params params.py
-```
-
-`params.py` is the config file you are using. If you want to accelerate experiments with mixed precision training, simply add the `--fp16` flag to the command.
-
-Note: currently multi-GPU training is not supported (actually you can do that by modifying `gpus` in the `params.py` file, but the trained results seem in bad quality, don't know why)
-
-The weights will be saved in `checkpoint/${params}`, only the best 3 are kept. You can access the training logs at https://wandb.ai/home.
-
-To test a checkpoint, simply run:
-
-```
-python test.py --params params.py --weight 'path/to/weight'
-```
-
-By default, two videos in `mp4` format (one from training set, one from val set) will be saved in `path/to/weight/vis/`
+-   SlotModel:
+    -   Vision encoder:
+        -   `clip_arch`: default is `ViT`, I think that's fine and we can try other variants like ResNet50 if necessary, _could try_
+        -   `clip_global_feats`: by default we take the features of each patch, since I believe the global one is trained in contrastive learning, while our task somehow requires spatial information to localize objects, **we should try**
+        -   `enc_pos_enc`: by default we don't apply positional encoding to the ViT features because there's already in the Transformer layers, **we should try**
+    -   Slot attention module:
+        -   `num_slots`: default is 7, that counts for `max_obj_num + 1`. But we have the prior here that, at most 2 objects are involved in one action, can we inject inductive bias via setting less slots here? **we should try**
+        -   `slot_size`: default is 64, IMO that's fine, maybe try enlarging it to 128, _could try_
+        -   `num_iterations`: default is 3, seems to be okay from the paper, _no need to try_
+        -   `slot_mlp_size`: default is 128, so this is FFN's hidden size, _could try_
+    -   Decoder module: the overall architecture is a big problem, it might be enough for this task but definitely not for real-world videos
+        -   `dec_resolution`: default is (7, 7), which means we need 5 up-sampling, (14, 14) is another option. **we should try**
+        -   `dec_kernel_size`: default is 3 which is suggested by `Object Radiance Field` paper, should try 5 as original paper. **we should try**
+        -   `dec_channels`: default is 5 consecutive 64 channels, may adjust with `slot_size`, of course up=sampling+Conv could replace stride2 DeConv. **we should try**
+-   Text2Slot module:
+    -   `text2slot_hidden_sizes`: default is 2layer MLP with 256 as hidden size, maybe one FC is enough, **we should try**
+    -   `predict_slot_dist`: by default we predict `mu` and `sigma`, maybe we can just predict one `mu` per slot

@@ -54,6 +54,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         resolution=params.resolution,
         num_slots=params.num_slots,
         num_iterations=params.num_iterations,
+        enc_resolution=params.enc_resolution,
         enc_channels=params.clip_vision_channel,
         enc_global_feats=params.clip_global_feats,
         enc_pos_enc=params.enc_pos_enc,

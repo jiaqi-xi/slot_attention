@@ -13,5 +13,8 @@ TBH I don't really think future prediction or perceptual loss can really solve t
 
 A most naive idea is to initialize `slot_{t+1}` with the slot feature at time `t`. By doing so, it's similar to that we regard `slot` as the hidden_state in a LSTM, the `slot-recon` and `mask` as the output of LSTM. I believe the [Neural Expectation Maximization (N-EM)](https://arxiv.org/pdf/1708.03498.pdf) paper does similar thing (of course there should be many other papers). Will try that out in the future. **This doesn't work at all!!! Strange...**
 
+**UPDATE on recurrent slot attention idea**: This finally works as Qiao Gu suggested, by stopping the gradient flowing from timestep `t+1` to previous timestep `t` (input detached `slot` to next frame). May because of the gradient explosion issue if too many steps.
 
-Seems that the real problem lies at the shared weight among slots and random initialization of slot embedding before each forward pass! After fixing the init of slots, it works.
+
+**2021.10.15**: Seems that the real problem lies at the shared weight among slots and random initialization of slot embedding before each forward pass! After fixing the init of slots, it works.
+So the best practice now is still train a shared `mu` and `sigma` for all slots, but in test time, we fix the random seed of sampling.
