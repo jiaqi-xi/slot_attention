@@ -10,22 +10,29 @@ from utils import Tensor, to_rgb_from_tensor
 
 class SlotAttentionVideoMethod(pl.LightningModule):
 
-    def __init__(self, model: SlotAttentionModel,
+    def __init__(self,
+                 model: SlotAttentionModel,
                  datamodule: pl.LightningDataModule,
-                 params: SlotAttentionParams):
+                 params: SlotAttentionParams,
+                 entropy_loss_w: float = 0.0):
         super().__init__()
         self.model = model
         self.datamodule = datamodule
         self.params = params
+        self.entropy_loss_w = entropy_loss_w
 
     def forward(self, input: Tensor, **kwargs) -> Tensor:
         return self.model(input, **kwargs)
 
     def training_step(self, batch, batch_idx, optimizer_idx=0):
         train_loss = self.model.loss_function(batch)
+        loss = train_loss['recon_loss']
+        if 'entropy' in train_loss.keys():
+            loss = loss + train_loss['entropy'] * self.entropy_loss_w
+        train_loss['loss'] = loss
         logs = {key: val.item() for key, val in train_loss.items()}
         self.log_dict(logs, sync_dist=True)
-        return train_loss
+        return {'loss': loss}
 
     def sample_images(self):
         dl = self.datamodule.val_dataloader()
@@ -114,13 +121,15 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         return val_loss
 
     def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
+        avg_recon_loss = torch.stack([x['recon_loss'] for x in outputs]).mean()
         logs = {
-            "avg_val_loss": avg_loss,
+            'loss': avg_recon_loss,
+            'val_recon_loss': avg_recon_loss,
         }
         if self.model.use_entropy_loss:
             avg_entropy = torch.stack([x['entropy'] for x in outputs]).mean()
-            logs['avg_val_entropy'] = avg_entropy
+            logs['val_entropy'] = avg_entropy
+            logs['loss'] += avg_entropy * self.entropy_loss_w
         self.log_dict(logs, sync_dist=True)
         print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))
 

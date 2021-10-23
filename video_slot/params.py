@@ -10,6 +10,11 @@ class SlotAttentionParams:
     batch_size: int = 64
     val_batch_size: int = 64
     resolution: Tuple[int, int] = (128, 128)
+    kernel_size: int = 5
+    hidden_dims: Tuple[int, ...] = (64, 64, 64, 64)
+    decoder_resolution: Tuple[int, int] = (8, 8)
+    use_deconv: bool = True
+    slot_size: int = 64
     num_slots: int = 7  # 5 change to 7 according to official code
     num_iterations: int = 3
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
@@ -27,8 +32,6 @@ class SlotAttentionParams:
     n_samples: int = 5
     warmup_steps_pct: float = 0.02
     decay_steps_pct: float = 0.2
-    # whether use relu in SlotModel
-    use_relu: bool = True
     # MLP hidden size in Slot Attention
     slot_mlp_size: int = 128
     # sample clips per video as input
@@ -44,10 +47,9 @@ class SlotAttentionParams:
     # TODO: but this codebase set it as False and I've done lots of exp using
     # TODO: it so far... So I set False as the default value
     learnable_slot = False
-    # whether train mu and sigma or slot embedding, or directly emb itself
-    random_slot: bool = True
-    # whether each slot shares one set of learned parameters
-    slot_agnostic: bool = True
     # perform recurrent slot-attention
     recurrent_slot_attention: bool = False
     stop_recur_slot_grad: bool = False
+    # use self-entropy loss to masks
+    use_entropy_loss: bool = False
+    entropy_loss_w: float = 1.0

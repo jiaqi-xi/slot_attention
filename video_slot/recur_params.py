@@ -6,14 +6,48 @@ import attr
 
 @attr.s(auto_attribs=True)
 class SlotAttentionParams:
+    # model configs
+    resolution: Tuple[int, int] = (128, 128)
+    kernel_size: int = 5
+    hidden_dims: Tuple[int, ...] = (64, 64, 64, 64)
+    decoder_resolution: Tuple[int, int] = (8, 8)
+    use_deconv: bool = True
+
+    # slot attention module
+    slot_size: int = 64
+    num_slots: int = 7  # 5 change to 7 according to official code
+    num_iterations: int = 3
+    # MLP hidden size in Slot Attention
+    slot_mlp_size: int = 128
+    # whether set the slot parameters as learnable (to be updated by BP)
+    # TODO: should be True in official code!!!
+    # TODO: but this codebase set it as False and I've done lots of exp using
+    # TODO: it so far... So I set False as the default value
+    learnable_slot = False
+    # perform recurrent slot-attention
+    recurrent_slot_attention: bool = True
+    stop_recur_slot_grad: bool = True
+    # use self-entropy loss to masks
+    use_entropy_loss: bool = False
+    entropy_loss_w: float = 1.0
+
+    # predict mask or image
+    pred_mask: bool = False
+    # whether stop the gradient of GT future
+    stop_future_grad: bool = False
+    # whether and what to use as perceptual loss
+    perceptual_loss: str = ''
+
+    # data
+    data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
+    # sample clips per video as input
+    sample_clip_num: int = 5
+
+    # training settings
+    gpus: int = 1
     lr: float = 0.0004
     batch_size: int = 20
     val_batch_size: int = 20
-    resolution: Tuple[int, int] = (128, 128)
-    num_slots: int = 7  # 5 change to 7 according to official code
-    num_iterations: int = 3
-    data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
-    gpus: int = 1
     max_epochs: int = 6
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5
@@ -27,27 +61,3 @@ class SlotAttentionParams:
     n_samples: int = 5
     warmup_steps_pct: float = 0.02
     decay_steps_pct: float = 0.2
-    # whether use relu in SlotModel
-    use_relu: bool = True
-    # MLP hidden size in Slot Attention
-    slot_mlp_size: int = 128
-    # sample clips per video as input
-    sample_clip_num: int = 5
-    # predict mask or image
-    pred_mask: bool = False
-    # whether stop the gradient of GT future
-    stop_future_grad: bool = False
-    # whether and what to use as perceptual loss
-    perceptual_loss: str = ''
-    # whether set the slot parameters as learnable (to be updated by BP)
-    # TODO: should be True in official code!!!
-    # TODO: but this codebase set it as False and I've done lots of exp using
-    # TODO: it so far... So I set False as the default value
-    learnable_slot = False
-    # whether train mu and sigma or slot embedding, or directly emb itself
-    random_slot: bool = True
-    # whether each slot shares one set of learned parameters
-    slot_agnostic: bool = True
-    # perform recurrent slot-attention
-    recurrent_slot_attention: bool = True
-    stop_recur_slot_grad: bool = True

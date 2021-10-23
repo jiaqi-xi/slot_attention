@@ -30,20 +30,18 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         slot_size: int = 64,
         hidden_dims: Tuple[int, ...] = (64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
+        use_deconv: bool = True,
         empty_cache: bool = False,
-        use_relu: bool = False,  # TODO: official code use ReLU
         slot_mlp_size: int = 128,
         learnable_slot=False,
-        slot_agnostic: bool = True,
-        random_slot: bool = True,
         stop_recur_slot_grad: bool = False,
+        use_entropy_loss: bool = False,
     ):
         super(RecurrentSlotAttentionModel,
               self).__init__(resolution, num_slots, num_iterations,
                              in_channels, kernel_size, slot_size, hidden_dims,
-                             decoder_resolution, empty_cache, use_relu,
-                             slot_mlp_size, learnable_slot, slot_agnostic,
-                             random_slot)
+                             decoder_resolution, use_deconv, empty_cache,
+                             slot_mlp_size, learnable_slot, use_entropy_loss)
 
         self.num_clips = num_clips
         self.stop_recur_slot_grad = stop_recur_slot_grad

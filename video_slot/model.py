@@ -12,14 +12,7 @@ class SlotAttention(nn.Module):
     """Slot attention module that iteratively performs cross-attention.
 
     Args:
-        slot_agnostic (bool): If True, all slots share trained embedding.
-            If False, we train embeddings seperately for each slot.
-            Defaults to True (as in the paper).
-        random_slot (bool): If True, we train mu and sigma for slot embedding,
-            and sample slot from the Gaussian when forward pass. If False, we
-            train slot embedding itself (similar to the learnable positional
-            embedding in DETR), so that we use the same embedding to interact
-            with input image features. Defaults to True (as in the paper).
+        learnable_slot (bool): whether the mu and sigma of slots are trainable
     """
 
     def __init__(self,
@@ -29,8 +22,6 @@ class SlotAttention(nn.Module):
                  slot_size,
                  mlp_hidden_size,
                  learnable_slot=False,
-                 slot_agnostic=True,
-                 random_slot=True,
                  epsilon=1e-6):
         super().__init__()
         self.in_features = in_features
@@ -39,8 +30,6 @@ class SlotAttention(nn.Module):
         self.slot_size = slot_size  # number of hidden layers in slot dimensions
         self.mlp_hidden_size = mlp_hidden_size
         self.learnable_slot = learnable_slot
-        self.slot_agnostic = slot_agnostic
-        self.random_slot = random_slot
         self.epsilon = epsilon
 
         self.norm_inputs = nn.LayerNorm(self.in_features)
@@ -61,36 +50,23 @@ class SlotAttention(nn.Module):
             nn.Linear(self.mlp_hidden_size, self.slot_size),
         )
 
-        trainable_slot_num = 1 if self.slot_agnostic else self.num_slots
         slot_init_func = self.register_parameter if \
             learnable_slot else self.register_buffer
-        if self.random_slot:
-            # train the mean and std of slot embedding
-            slot_init_func(
-                "slots_mu",
-                torch.nn.Parameter(
-                    nn.init.xavier_uniform_(
-                        torch.zeros((1, trainable_slot_num, self.slot_size)),
-                        gain=nn.init.calculate_gain("linear"))),
-            )
-            slot_init_func(
-                "slots_log_sigma",
-                torch.nn.Parameter(
-                    nn.init.xavier_uniform_(
-                        torch.zeros((1, trainable_slot_num, self.slot_size)),
-                        gain=nn.init.calculate_gain("linear"))),
-            )
-        else:
-            # train slot embedding itself
-            # should definitely be one trainable embedding for each slot
-            assert not slot_agnostic, 'cannot use the same emb for each slot!'
-            slot_init_func(
-                "slots_mu",
-                torch.nn.Parameter(
-                    nn.init.xavier_normal_(  # TODO: mind the init method here?
-                        torch.zeros((1, self.num_slots, self.slot_size)),
-                        gain=nn.init.calculate_gain("linear"))),
-            )
+        # train the mean and std of slot embedding
+        slot_init_func(
+            "slots_mu",
+            torch.nn.Parameter(
+                nn.init.xavier_uniform_(
+                    torch.zeros((1, 1, self.slot_size)),
+                    gain=nn.init.calculate_gain("linear"))),
+        )
+        slot_init_func(
+            "slots_log_sigma",
+            torch.nn.Parameter(
+                nn.init.xavier_uniform_(
+                    torch.zeros((1, 1, self.slot_size)),
+                    gain=nn.init.calculate_gain("linear"))),
+        )
 
     def forward(self, inputs: Tensor, slots_prev=None):
         # `inputs` has shape [batch_size, num_inputs, inputs_size].
@@ -103,15 +79,11 @@ class SlotAttention(nn.Module):
 
         if slots_prev is None:
             # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
-            if self.random_slot:
-                # sample from Gaussian with learned mean and std
-                slots_init = torch.randn(
-                    (batch_size, self.num_slots, self.slot_size))
-                slots_init = slots_init.type_as(inputs)
-                slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
-            else:
-                # use the learned embedding itself, no sampling, no randomness
-                slots = self.slots_mu.repeat(batch_size, 1, 1)
+            # sample from Gaussian with learned mean and std
+            slots_init = torch.randn(
+                (batch_size, self.num_slots, self.slot_size))
+            slots_init = slots_init.type_as(inputs)
+            slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
         else:
             # directly use the provided previous slots
             slots = slots_prev
@@ -161,12 +133,11 @@ class SlotAttentionModel(nn.Module):
         slot_size: int = 64,
         hidden_dims: Tuple[int, ...] = (64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
+        use_deconv: bool = True,
         empty_cache: bool = False,
-        use_relu: bool = False,  # TODO: official code use ReLU
         slot_mlp_size: int = 128,
         learnable_slot: bool = False,
-        slot_agnostic: bool = True,
-        random_slot: bool = True,
+        use_entropy_loss: bool = False,
     ):
         super().__init__()
         self.resolution = resolution
@@ -177,6 +148,7 @@ class SlotAttentionModel(nn.Module):
         self.slot_size = slot_size
         self.empty_cache = empty_cache
         self.hidden_dims = hidden_dims
+        self.use_deconv = use_deconv
         self.decoder_resolution = decoder_resolution
         self.out_features = self.hidden_dims[-1]
 
@@ -193,7 +165,7 @@ class SlotAttentionModel(nn.Module):
                         stride=1,
                         padding=self.kernel_size // 2,
                     ),
-                    nn.ReLU() if use_relu else nn.LeakyReLU(),
+                    nn.ReLU(),
                 ))
             channels = h_dim
 
@@ -203,7 +175,7 @@ class SlotAttentionModel(nn.Module):
                                                        resolution)
         self.encoder_out_layer = nn.Sequential(
             nn.Linear(self.out_features, self.out_features),
-            nn.ReLU() if use_relu else nn.LeakyReLU(),
+            nn.ReLU(),
             nn.Linear(self.out_features, self.out_features),
         )
 
@@ -216,15 +188,9 @@ class SlotAttentionModel(nn.Module):
         for i in range(len(self.hidden_dims) - 1, -1, -1):
             modules.append(
                 nn.Sequential(
-                    nn.ConvTranspose2d(
-                        self.hidden_dims[i],
-                        self.hidden_dims[i - 1],
-                        kernel_size=5,
-                        stride=2,
-                        padding=2,
-                        output_padding=1,
-                    ),
-                    nn.ReLU() if use_relu else nn.LeakyReLU(),
+                    self.upsample2x(self.hidden_dims[i],
+                                    self.hidden_dims[i - 1]),
+                    nn.ReLU(),
                 ))
             out_size = conv_transpose_out_shape(out_size, 2, 2, 5, 1)
 
@@ -236,24 +202,23 @@ class SlotAttentionModel(nn.Module):
         )
 
         # same convolutions
+        conv_module = nn.ConvTranspose2d if self.use_deconv else nn.Conv2d
         modules.append(
             nn.Sequential(
-                nn.ConvTranspose2d(
+                conv_module(
                     self.out_features,
                     self.out_features,
-                    kernel_size=5,
+                    kernel_size=self.kernel_size,
                     stride=1,
-                    padding=2,
-                    output_padding=0,
+                    padding=self.kernel_size // 2,
                 ),
-                nn.ReLU() if use_relu else nn.LeakyReLU(),
-                nn.ConvTranspose2d(
+                nn.ReLU(),
+                conv_module(
                     self.out_features,
                     4,
                     kernel_size=3,
                     stride=1,
                     padding=1,
-                    output_padding=0,
                 ),
             ))
 
@@ -269,9 +234,9 @@ class SlotAttentionModel(nn.Module):
             slot_size=self.slot_size,
             mlp_hidden_size=slot_mlp_size,
             learnable_slot=learnable_slot,
-            slot_agnostic=slot_agnostic,
-            random_slot=random_slot,
         )
+
+        self.use_entropy_loss = use_entropy_loss  # -p*log(p)
 
     def forward(self, x):
         if self.empty_cache:
@@ -315,14 +280,42 @@ class SlotAttentionModel(nn.Module):
         # TODO: this is different from the other slot-att models
         return recon_combined, recons, masks, slot_recons
 
+    def upsample2x(self, in_channels, out_channels):
+        if self.use_deconv:
+            return nn.ConvTranspose2d(
+                in_channels,
+                out_channels,
+                kernel_size=self.kernel_size,
+                stride=2,
+                padding=self.kernel_size // 2,
+                output_padding=1,
+            )
+        else:
+            return nn.Sequential(
+                nn.UpsamplingBilinear2d(scale_factor=2),
+                nn.Conv2d(
+                    in_channels,
+                    out_channels,
+                    kernel_size=self.kernel_size,
+                    stride=1,
+                    padding=self.kernel_size // 2,
+                ),
+            )
+
     def loss_function(self, input):
         recon_combined, recons, masks, slots = self.forward(input)
         loss = F.mse_loss(recon_combined, input)
-        return {
-            'loss': loss,
+        output_dict = {
+            'recon_loss': loss,
             'masks': masks,
             'slots': slots,
         }
+        # masks: [B, num_slots, 1, H, W], apply entropy loss
+        if self.use_entropy_loss:
+            masks = masks[:, :, 0]  # [B, num_slots, H, W]
+            entroly_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
+            output_dict['entropy'] = entroly_loss
+        return output_dict
 
 
 class SoftPositionEmbed(nn.Module):
@@ -465,7 +458,7 @@ class ConvAutoEncoder(nn.Module):
         """Predict x at next time step.
         x: [B, C, H, W]
         """
-        _, C, H, W = x.shape[:]
+        _, C, H, W = x.shape
         feats = self.encoder(x)
         pred_x = self.decoder(feats)
         if self.use_softmax:

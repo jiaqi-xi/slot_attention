@@ -318,12 +318,12 @@ class SlotAttentionModel(nn.Module):
         recon_combined, recons, masks, slots = self.forward(input)
         loss = F.mse_loss(recon_combined, input)
         loss_dict = {
-            "loss": loss,
+            'recon_loss': loss,
         }
         # masks: [B, num_slots, 1, H, W], apply entropy loss
         if self.use_entropy_loss:
             masks = masks[:, :, 0]  # [B, num_slots, H, W]
-            entroly_loss = (-masks * torch.log(masks + 1e-6)).sum(1)[0].mean()
+            entroly_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
             loss_dict['entropy'] = entroly_loss
         return loss_dict
 

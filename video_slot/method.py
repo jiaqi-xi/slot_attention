@@ -16,6 +16,7 @@ class SlotAttentionVideoMethod(pl.LightningModule):
                  predictor: ConvAutoEncoder,
                  datamodule: pl.LightningDataModule,
                  params: SlotAttentionParams,
+                 entropy_loss_w: float = 0.0,
                  pred_mask: bool = True,
                  stop_future_grad: bool = False):
         super().__init__()
@@ -23,6 +24,8 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         self.predictor = predictor
         self.datamodule = datamodule
         self.params = params
+        self.entropy_loss_w = entropy_loss_w
+
         # whether use mask as future prediction input?
         self.pred_mask = pred_mask
         # stop grad for GT of future prediction?
@@ -37,58 +40,44 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         We need both reconstruction loss and a future prediction loss.
         batch: [B, sample_clip_num, C, H, W]
         """
-        bs, clip, C, H, W = batch.shape[:]
+        _, _, C, H, W = batch.shape
         train_output = self.model.loss_function(batch.view(-1, C, H, W))
-        train_loss = {'loss': train_output['loss']}
-        if self.predictor is not None:
-            # masks: [B*clip, num_slots, 1, H, W]
-            # slots: [B*clip, num_slots, C, H, W]
-            slots, masks = train_output['slots'], train_output['masks']
-            # get [B*(clip-1)*num_slots, C', H, W] input and gt
-            prev_input, future_gt = self._prepare_predictor_data(
-                masks if self.pred_mask else slots, bs, clip)
-            if self.stop_future_grad:
-                future_gt = future_gt.detach().clone()
-            pred_loss = self.predictor.loss_function(prev_input, future_gt)
-            pred_loss = {'pred_loss': pred_loss['pred_loss']}
-            train_loss.update(pred_loss)
+        loss = train_output['recon_loss']
+        train_loss = {
+            'recon_loss': train_output['recon_loss'],
+        }
+        if 'entropy' in train_output.keys():
+            loss = loss + train_output['entropy'] * self.entropy_loss_w
+            train_loss['entropy'] = train_output['entropy']
+        train_loss['loss'] = loss
         logs = {key: val.item() for key, val in train_loss.items()}
         self.log_dict(logs, sync_dist=True)
-        return train_loss
+        return {'loss': loss}
 
     def validation_step(self, batch, batch_idx, optimizer_idx=0):
-        bs, clip, C, H, W = batch.shape[:]
+        _, _, C, H, W = batch.shape
         val_output = self.model.loss_function(batch.view(-1, C, H, W))
-        val_loss = {'loss': val_output['loss']}
-        if self.predictor is not None:
-            # masks: [B*clip, num_slots, 1, H, W]
-            # slots: [B*clip, num_slots, C, H, W]
-            slots, masks = val_output['slots'], val_output['masks']
-            # get [B*(clip-1)*num_slots, C', H, W] input and gt
-            prev_input, future_gt = self._prepare_predictor_data(
-                masks if self.pred_mask else slots, bs, clip)
-            if self.stop_future_grad:
-                future_gt = future_gt.detach().clone()
-            pred_loss = self.predictor.loss_function(prev_input, future_gt)
-            pred_loss = {'pred_loss': pred_loss['pred_loss']}
-            val_loss.update(pred_loss)
+        val_loss = {'recon_loss': val_output['recon_loss']}
+        if 'entropy' in val_output.keys():
+            val_loss['entropy'] = val_output['entropy']
         return val_loss
 
     def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
+        avg_recon_loss = torch.stack([x['recon_loss'] for x in outputs]).mean()
         logs = {
-            "avg_val_loss": avg_loss,
+            'loss': avg_recon_loss,
+            'val_recon_loss': avg_recon_loss,
         }
-        if self.predictor is not None:
-            avg_pred_loss = torch.stack([x["pred_loss"]
-                                         for x in outputs]).mean()
-            logs['avg_val_pred_loss'] = avg_pred_loss
+        if self.model.use_entropy_loss:
+            avg_entropy = torch.stack([x['entropy'] for x in outputs]).mean()
+            logs['val_entropy'] = avg_entropy
+            logs['loss'] += avg_entropy * self.entropy_loss_w
         self.log_dict(logs, sync_dist=True)
         print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))
 
     def _prepare_predictor_data(self, data, bs, clip):
         """data in shape [B*clip, num_slots, C', H, W]"""
-        _, num_slots, C, H, W = data.shape[:]
+        _, num_slots, C, H, W = data.shape
         data = data.view(bs, clip, num_slots, C, H, W)
         prev_input = data[:, :-1].reshape(bs * (clip - 1) * num_slots, C, H, W)
         future_gt = data[:, 1:].reshape(bs * (clip - 1) * num_slots, C, H, W)
@@ -99,7 +88,7 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         perm = torch.randperm(self.params.val_batch_size)
         idx = perm[:self.params.n_samples]
         batch = next(iter(dl))[idx]  # [B, sample_clip_num, C, H, W]
-        bs, clip, C, H, W = batch.shape[:]
+        bs, clip, C, H, W = batch.shape
         if self.params.gpus > 0:
             batch = batch.to(self.device)
         # recon_combined: [B*clip, C, H, W]

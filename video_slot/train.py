@@ -66,25 +66,31 @@ def main(params: Optional[SlotAttentionParams] = None):
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
             num_clips=params.sample_clip_num,
+            kernel_size=params.kernel_size,
+            slot_size=params.slot_size,
+            hidden_dims=params.hidden_dims,
+            decoder_resolution=params.decoder_resolution,
+            use_deconv=params.use_deconv,
             empty_cache=params.empty_cache,
-            use_relu=params.use_relu,
             slot_mlp_size=params.slot_mlp_size,
             learnable_slot=params.learnable_slot,
-            slot_agnostic=params.slot_agnostic,
-            random_slot=params.random_slot,
             stop_recur_slot_grad=params.stop_recur_slot_grad,
+            use_entropy_loss=params.use_entropy_loss,
         )
     else:
         model = SlotAttentionModel(
             resolution=params.resolution,
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
+            kernel_size=params.kernel_size,
+            slot_size=params.slot_size,
+            hidden_dims=params.hidden_dims,
+            decoder_resolution=params.decoder_resolution,
+            use_deconv=params.use_deconv,
             empty_cache=params.empty_cache,
-            use_relu=params.use_relu,
             slot_mlp_size=params.slot_mlp_size,
             learnable_slot=params.learnable_slot,
-            slot_agnostic=params.slot_agnostic,
-            random_slot=params.random_slot,
+            use_entropy_loss=params.use_entropy_loss,
         )
     if params.perceptual_loss:
         predictor = PerceptualLoss(params.perceptual_loss)
@@ -102,6 +108,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         predictor=predictor,
         datamodule=clevr_datamodule,
         params=params,
+        entropy_loss_w=params.entropy_loss_w,
         pred_mask=params.pred_mask,
         stop_future_grad=params.stop_future_grad)
 

@@ -33,6 +33,7 @@ class SlotAttentionParams:
     slot_mlp_size: int = 128
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
+    entropy_loss_w: float = 1.0
     # whether set the slot parameters as learnable (to be updated by BP)
     # TODO: should be True in official code!!!
     # TODO: but this codebase set it as False and I've done lots of exp using

@@ -25,24 +25,28 @@ def main(params=None):
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
             num_clips=params.sample_clip_num,
+            kernel_size=params.kernel_size,
+            slot_size=params.slot_size,
+            hidden_dims=params.hidden_dims,
+            decoder_resolution=params.decoder_resolution,
+            use_deconv=params.use_deconv,
             empty_cache=params.empty_cache,
-            use_relu=params.use_relu,
             slot_mlp_size=params.slot_mlp_size,
             learnable_slot=params.learnable_slot,
-            slot_agnostic=params.slot_agnostic,
-            random_slot=params.random_slot,
         )
     else:
         model = SlotAttentionModel(
             resolution=params.resolution,
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
+            kernel_size=params.kernel_size,
+            slot_size=params.slot_size,
+            hidden_dims=params.hidden_dims,
+            decoder_resolution=params.decoder_resolution,
+            use_deconv=params.use_deconv,
             empty_cache=params.empty_cache,
-            use_relu=params.use_relu,
             slot_mlp_size=params.slot_mlp_size,
             learnable_slot=params.learnable_slot,
-            slot_agnostic=params.slot_agnostic,
-            random_slot=params.random_slot,
         )
 
     clevr_transforms = transforms.Compose([

@@ -101,7 +101,9 @@ class CLEVRVideoFrameDataset(Dataset):
             with open(anno_path, 'r') as f:
                 anno = json.load(f)
             num_objects = len(anno['objects'])
-            if num_objects <= self.max_n_objects:
+            # TODO: here we don't care about object num
+            # if num_objects <= self.max_n_objects:
+            if True:
                 image_path = os.path.join(self.data_path,
                                           f"{anno['image_filename']}.avi")
                 assert os.path.exists(
