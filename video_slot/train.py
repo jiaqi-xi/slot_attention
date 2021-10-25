@@ -56,9 +56,12 @@ def main(params: Optional[SlotAttentionParams] = None):
         sample_clip_num=params.sample_clip_num,
     )
 
+    print('Not using max_object_num constraint here!')
+    """
     print(
         f"Training set size (images must have {params.num_slots - 1} "
         "objects):", len(clevr_datamodule.train_dataset))
+    """
 
     if params.recurrent_slot_attention:
         model = RecurrentSlotAttentionModel(

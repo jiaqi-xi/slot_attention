@@ -56,6 +56,20 @@ class SlotAttention(nn.Module):
             nn.Linear(self.mlp_hidden_size, self.slot_size),
         )
 
+        # TODO: in case we don't use Text2Slot model
+        self.register_buffer(
+            "slots_mu",
+            nn.init.xavier_uniform_(
+                torch.zeros((1, 1, self.slot_size)),
+                gain=nn.init.calculate_gain("linear")),
+        )
+        self.register_buffer(
+            "slots_log_sigma",
+            nn.init.xavier_uniform_(
+                torch.zeros((1, 1, self.slot_size)),
+                gain=nn.init.calculate_gain("linear")),
+        )
+
     def forward(self, inputs: Tensor, slots_mu: Tensor, slots_log_sigma=None):
         """Forward function.
 
@@ -75,10 +89,21 @@ class SlotAttention(nn.Module):
         v = self.project_v(inputs)
 
         # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
-        if slots_log_sigma is None:
+        if slots_mu is not None and slots_log_sigma is None:
+            # Text2Slot predicts slot embeddings for each slot individually
             assert len(slots_mu.shape) == 3, 'wrong slot embedding shape!'
             slots = slots_mu
         else:
+            if slots_mu is not None:
+                # Text2Slot predicts shared mu and sigma for slots
+                assert slots_log_sigma is not None
+                slots_mu = slots_mu.unsqueeze(1)
+                slots_log_sigma = slots_log_sigma.unsqueeze(1)
+            else:
+                # not using Text2Slot
+                assert slots_log_sigma is None
+                slots_mu = self.slots_mu
+                slots_log_sigma = self.slots_log_sigma
             # if in testing mode, fix random seed to get same slot embedding
             if not self.training:
                 torch.manual_seed(0)
@@ -86,13 +111,12 @@ class SlotAttention(nn.Module):
                 slots_init = torch.randn(
                     (1, self.num_slots,
                      self.slot_size)).repeat(batch_size, 1, 1)
-            # in training mode, sample from Gaussian with learned mean and std
+            # in training mode, sample from Gaussian with mean and std
             else:
                 slots_init = torch.randn(
                     (batch_size, self.num_slots, self.slot_size))
             slots_init = slots_init.type_as(inputs)
-            slots = slots_mu.unsqueeze(1) + \
-                slots_log_sigma.exp().unsqueeze(1) * slots_init
+            slots = slots_mu + slots_log_sigma.exp() * slots_init
 
         # Multiple rounds of attention.
         for _ in range(self.num_iterations):
@@ -138,7 +162,7 @@ class SlotAttentionModel(nn.Module):
     def __init__(
         self,
         clip_model: CLIP,
-        text2slot_model: Text2Slot,
+        text2slot_model: Text2Slot,  # if None, then don't use it here
         resolution: Tuple[int, int],
         num_slots: int,
         num_iterations: int,
@@ -270,6 +294,8 @@ class SlotAttentionModel(nn.Module):
 
     def _get_slot_embedding(self, text):
         """Encode text, generate slot embeddings."""
+        if self.text2slot_model is None:
+            return None, None
         text_features = self.clip_model.encode_text(text, lin_proj=False)  # BC
         text_features = text_features.type(self.dtype)
         slot_mu, slot_log_sigma = self.text2slot_model(text_features)
@@ -312,13 +338,13 @@ class SlotAttentionModel(nn.Module):
         recon_combined, recons, masks, slots = self.forward(input)
         loss = F.mse_loss(recon_combined, input['img'])
         loss_dict = {
-            "loss": loss,
+            "recon_loss": loss,
         }
         # masks: [B, num_slots, 1, H, W], apply entropy loss
         if self.use_entropy_loss:
             masks = masks[:, :, 0]  # [B, num_slots, H, W]
-            entroly_loss = (-masks * torch.log(masks + 1e-6)).sum(1)[0].mean()
-            loss_dict['entropy'] = entroly_loss
+            entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
+            loss_dict['entropy'] = entropy_loss
         return loss_dict
 
     @property

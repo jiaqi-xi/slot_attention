@@ -46,7 +46,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         params.slot_size,
         params.text2slot_hidden_sizes,
         predict_dist=params.predict_slot_dist,
-        use_bn=False)
+        use_bn=False) if params.use_text2slot else None
 
     model = SlotAttentionModel(
         clip_model=clip_model,
@@ -79,12 +79,18 @@ def main(params: Optional[SlotAttentionParams] = None):
         fine_grained=params.fine_grained,
     )
 
+    print('Not using max_object_num constraint here!')
+    """
     print(
         f"Training set size (images must have {params.num_slots - 1} "
         "objects):", len(clevr_datamodule.train_dataset))
+    """
 
     method = SlotAttentionMethod(
-        model=model, datamodule=clevr_datamodule, params=params)
+        model=model,
+        datamodule=clevr_datamodule,
+        params=params,
+        entropy_loss_w=params.entropy_loss_w)
 
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params
@@ -99,9 +105,9 @@ def main(params: Optional[SlotAttentionParams] = None):
     ckp_path = "./checkpoint/" \
         f"{args.params + '-fp16' if args.fp16 else args.params}/{SLURM_JOB_ID}"
     checkpoint_callback = ModelCheckpoint(
-        monitor="avg_val_loss",
+        monitor="val_recon_loss",
         dirpath=ckp_path,
-        filename="CLEVRVideo{epoch:03d}-val_loss_{avg_val_loss:.4f}",
+        filename="CLEVRVideo{epoch:03d}-val_loss_{val_recon_loss:.4f}",
         save_top_k=3,
         mode="min",
     )

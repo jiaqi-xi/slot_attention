@@ -54,9 +54,12 @@ def main(params: Optional[SlotAttentionParams] = None):
         num_workers=params.num_workers,
     )
 
+    print('Not using max_object_num constraint here!')
+    """
     print(
         f"Training set size (images must have {params.num_slots - 1} "
         "objects):", len(clevr_datamodule.train_dataset))
+    """
 
     model = SlotAttentionModel(
         resolution=params.resolution,

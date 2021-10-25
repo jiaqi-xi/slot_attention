@@ -19,6 +19,7 @@ class SlotAttentionParams:
     dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
+    entropy_loss_w: float = 1.0
 
     # architecture of CLIP pre-trained model
     clip_arch: str = 'ViT-B/32'
@@ -29,6 +30,7 @@ class SlotAttentionParams:
     enc_pos_enc: bool = False
 
     # Text2Slot model
+    use_text2slot: bool = True
     text2slot_hidden_sizes: Tuple[int] = (256, )
     predict_slot_dist: bool = True
 
