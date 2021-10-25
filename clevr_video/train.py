@@ -90,7 +90,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     ckp_path = "./checkpoint/" \
         f"{args.params + '-fp16' if args.fp16 else args.params}/{SLURM_JOB_ID}"
     checkpoint_callback = ModelCheckpoint(
-        monitor="avg_val_loss",
+        monitor="val_recon_loss",
         dirpath=ckp_path,
         filename="CLEVRVideo{epoch:03d}-val_loss_{avg_val_loss:.4f}",
         save_top_k=3,

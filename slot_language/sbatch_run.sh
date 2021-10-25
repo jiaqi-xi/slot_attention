@@ -35,6 +35,7 @@ echo "#!/bin/bash
 #SBATCH --open-mode=append
 #SBATCH --partition=$PARTITION                       # self-explanatory, set to your preference (e.g. gpu or cpu on MaRS, p100, t4, or cpu on Vaughan)
 #SBATCH --cpus-per-task=$CPUS_PER_TASK               # self-explanatory, set to your preference
+#SBATCH --ntasks=$GPUS
 #SBATCH --ntasks-per-node=$GPUS
 #SBATCH --mem-per-cpu=8G                             # self-explanatory, set to your preference
 #SBATCH --gres=gpu:$GPUS                             # NOTE: you need a GPU for CUDA support; self-explanatory, set to your preference 
