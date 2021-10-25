@@ -127,7 +127,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     checkpoint_callback = ModelCheckpoint(
         monitor="val_recon_loss",
         dirpath=ckp_path,
-        filename="CLEVRVideoSlot{epoch:03d}-val_loss_{avg_val_loss:.4f}",
+        filename="CLEVRVideoSlot{epoch:03d}-val_loss_{val_recon_loss:.4f}",
         save_top_k=3,
         mode="min",
     )
