@@ -162,6 +162,8 @@ class SlotAttentionModel(nn.Module):
     def __init__(
         self,
         clip_model: CLIP,
+        use_clip_vision: bool,
+        use_clip_text: bool,
         text2slot_model: Text2Slot,  # if None, then don't use it here
         resolution: Tuple[int, int],
         num_slots: int,
@@ -195,14 +197,22 @@ class SlotAttentionModel(nn.Module):
         self.out_features = self.dec_hidden_dims[-1]
 
         # Pre-trained CLIP model, we freeze it here
-        if clip_model is not None:
-            assert text2slot_model is None
-            self.clip_model = clip_model.eval()
-            for p in self.clip_model.parameters():
-                p.requires_grad = False
-        else:
-            # we build an encoder as in original Slot Attention paper
-            self.clip_model = None
+        self.clip_model = clip_model.eval()
+        for p in self.clip_model.parameters():
+            p.requires_grad = False
+        self.use_clip_vision = use_clip_vision
+        self.use_clip_text = use_clip_text
+
+        # Text2Slot that generates slot embedding from text features
+        if self.use_clip_text:
+            assert text2slot_model is not None
+        self.text2slot_model = text2slot_model
+
+        # we build an encoder as in original Slot Attention paper
+        if not use_clip_vision:
+            self.enc_pos_enc = True
+            self.enc_resolution = self.resolution
+            self.enc_channels = self.out_features
             modules = []
             channels = 3  # RGB in_channels
             # Build Encoder
@@ -230,9 +240,6 @@ class SlotAttentionModel(nn.Module):
             nn.ReLU(),
             nn.Linear(self.out_features, self.out_features),
         )
-
-        # Text2Slot that generates slot embedding from text features
-        self.text2slot_model = text2slot_model
 
         # Build Decoder
         modules = []
@@ -300,7 +307,7 @@ class SlotAttentionModel(nn.Module):
 
     def _get_encoder_out(self, img):
         """Encode image, potentially add pos enc, apply MLP."""
-        if self.clip_model is not None:
+        if self.use_clip_vision:
             encoder_out = self.clip_model.encode_image(
                 img, global_feats=self.enc_global_feats,
                 downstream=True)  # BCDD
@@ -320,7 +327,8 @@ class SlotAttentionModel(nn.Module):
 
     def _get_slot_embedding(self, text):
         """Encode text, generate slot embeddings."""
-        if self.text2slot_model is None:
+        if not self.use_clip_text:
+            # not generating slots
             return None, None
         text_features = self.clip_model.encode_text(text, lin_proj=False)  # BC
         text_features = text_features.type(self.dtype)

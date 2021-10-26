@@ -155,7 +155,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         actions = anno['actions']
         text0_1 = self.pattern0_1.format(
             color=object_colors[0], shape=object_shapes[0])
-        text0_2 = self.pattern0_1.format(
+        text0_2 = self.pattern0_2.format(
             color=object_colors[0], shape=object_shapes[0])
         text1 = self.pattern1.format(
             color1=object_colors[1],

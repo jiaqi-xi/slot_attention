@@ -22,7 +22,7 @@ class SlotAttentionParams:
     entropy_loss_w: float = 1.0
 
     # architecture of CLIP pre-trained model
-    use_clip: bool = True
+    use_clip_vision: bool = True
     clip_arch: str = 'ViT-B/32'
     enc_resolution: Tuple[int, int] = (7, 7)  # (num_patches, num_patches)
     clip_vision_channel: int = 768
