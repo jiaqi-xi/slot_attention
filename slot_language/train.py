@@ -40,6 +40,8 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     # load pre-trained CLIP model
     clip_model, clip_transforms = clip.load(params.clip_arch)
+    if not params.use_clip:
+        clip_model = None
     text2slot_model = Text2Slot(
         params.clip_text_channel,
         params.num_slots,

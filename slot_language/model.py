@@ -195,12 +195,31 @@ class SlotAttentionModel(nn.Module):
         self.out_features = self.dec_hidden_dims[-1]
 
         # Pre-trained CLIP model, we freeze it here
-        self.clip_model = clip_model.eval()
-        for p in self.clip_model.parameters():
-            p.requires_grad = False
-
-        # Text2Slot that generates slot embedding from text features
-        self.text2slot_model = text2slot_model
+        if clip_model is not None:
+            assert text2slot_model is None
+            self.clip_model = clip_model.eval()
+            for p in self.clip_model.parameters():
+                p.requires_grad = False
+        else:
+            # we build an encoder as in original Slot Attention paper
+            self.clip_model = None
+            modules = []
+            channels = 3  # RGB in_channels
+            # Build Encoder
+            for h_dim in self.dec_hidden_dims:
+                modules.append(
+                    nn.Sequential(
+                        nn.Conv2d(
+                            channels,
+                            out_channels=h_dim,
+                            kernel_size=self.dec_kernel_size,
+                            stride=1,
+                            padding=self.dec_kernel_size // 2,
+                        ),
+                        nn.ReLU(),
+                    ))
+                channels = h_dim
+            self.encoder = nn.Sequential(*modules)
 
         # Build Encoder related modules
         if self.enc_pos_enc:
@@ -211,6 +230,9 @@ class SlotAttentionModel(nn.Module):
             nn.ReLU(),
             nn.Linear(self.out_features, self.out_features),
         )
+
+        # Text2Slot that generates slot embedding from text features
+        self.text2slot_model = text2slot_model
 
         # Build Decoder
         modules = []
@@ -278,9 +300,13 @@ class SlotAttentionModel(nn.Module):
 
     def _get_encoder_out(self, img):
         """Encode image, potentially add pos enc, apply MLP."""
-        encoder_out = self.clip_model.encode_image(
-            img, global_feats=self.enc_global_feats, downstream=True)  # BCDD
-        encoder_out = encoder_out.type(self.dtype)
+        if self.clip_model is not None:
+            encoder_out = self.clip_model.encode_image(
+                img, global_feats=self.enc_global_feats,
+                downstream=True)  # BCDD
+            encoder_out = encoder_out.type(self.dtype)
+        else:
+            encoder_out = self.encoder(img)
         # may not applying pos_enc because Encoder in CLIP already does so
         if self.enc_pos_enc:
             encoder_out = self.encoder_pos_embedding(encoder_out)
