@@ -10,18 +10,7 @@ from utils import Tensor, assert_shape, build_grid, conv_transpose_out_shape
 
 
 class SlotAttention(nn.Module):
-    """Slot attention module that iteratively performs cross-attention.
-
-    Args:
-        slot_agnostic (bool): If True, all slots share trained embedding.
-            If False, we train embeddings seperately for each slot.
-            Defaults to True (as in the paper).
-        random_slot (bool): If True, we train mu and sigma for slot embedding,
-            and sample slot from the Gaussian when forward pass. If False, we
-            train slot embedding itself (similar to the learnable positional
-            embedding in DETR), so that we use the same embedding to interact
-            with input image features. Defaults to True (as in the paper).
-    """
+    """Slot attention module that iteratively performs cross-attention."""
 
     def __init__(self,
                  in_features,
