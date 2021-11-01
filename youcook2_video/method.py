@@ -31,6 +31,18 @@ class SlotAttentionVideoMethod(pl.LightningModule):
             loss = loss + train_loss['entropy'] * self.entropy_loss_w
         train_loss['loss'] = loss
         logs = {key: val.item() for key, val in train_loss.items()}
+        # record training time
+        data_time = self.trainer.profiler.recorded_durations[
+            'get_train_batch'][-1]
+        forward_time = self.trainer.profiler.recorded_durations[
+            'model_forward'][-1]
+        backward_time = self.trainer.profiler.recorded_durations[
+            'model_backward'][-1]
+        time_dict = dict(
+            data_time=data_time,
+            forward_time=forward_time,
+            backward_time=backward_time)
+        logs.update(time_dict)
         self.log_dict(logs, sync_dist=True)
         return {'loss': loss}
 
@@ -79,13 +91,15 @@ class SlotAttentionVideoMethod(pl.LightningModule):
     def sample_video(self):
         dst = self.datamodule.val_dataset
         dst.is_video = True
-        # TODO: since video has different length, we only test one here
-        sampled_idx = torch.randperm(dst.num_videos)[:1]
-        # sampled_idx = torch.randperm(dst.num_videos)[:self.params.n_samples]
+        sampled_idx = torch.randperm(dst.num_videos)[:self.params.n_samples]
         results = []
         for idx in sampled_idx:
             idx = idx.item()
             video = dst.__getitem__(idx)  # [B, 3, H, W]
+            # TODO: videos are too long, only take a few clips
+            clip_len = 128
+            clip_idx = int(torch.randint(0, video.shape[0] - clip_len, (1, )))
+            video = video[clip_idx:clip_idx + clip_len]
             if self.params.gpus > 0:
                 video = video.to(self.device)
             recon_combined, recons, masks, slots = self.model.forward(video)

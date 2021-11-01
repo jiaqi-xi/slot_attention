@@ -56,16 +56,23 @@ class YouCook2FrameDataset(Dataset):
             self.annos = json.load(f)['database']
 
         self.paths, self.stats, self.annos = self._get_files()
+        self.num_videos = len(self.paths)
         # get mapping from frame_idx to video_idx
         self.frame_idx = [0]
         for stat in self.stats:
             self.frame_idx.append(self.frame_idx[-1] + stat['total_frame'])
+        self.total_frames = self.frame_idx[-1]
 
-    def _frame_idx2video_idx(self, frame_idx):
+    def _frame_idx2video_idx(self, frame_idx: int):
         for i in range(len(self.frame_idx) - 1):
             if self.frame_idx[i] <= frame_idx < self.frame_idx[i + 1]:
                 return i
         return None
+
+    def _rand_another(self):
+        """Randomly get another data if current video is unavailable."""
+        new_idx = np.random.choice(self.total_frames)
+        return self.__getitem__(new_idx)
 
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""
@@ -79,18 +86,19 @@ class YouCook2FrameDataset(Dataset):
         cap = cv2.VideoCapture(video_path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         success, img = cap.read()
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        assert success, f'read video {video_path} frame {frame_idx} failed!'
         cap.release()
+        if not success:
+            return self._rand_another()
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return self.youcook2_transforms(img)
 
     def __len__(self):
-        return len(self.files) * self.clip_len
+        return self.total_frames
 
     def _get_video(self, index: int):
         # assume input is video index!
         video_idx = index
-        video_path = self.files[video_idx]
+        video_path = self.paths[video_idx]
         cap = cv2.VideoCapture(video_path)
         success = True
         img_list = []
