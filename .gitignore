@@ -3,6 +3,7 @@ checkpoint/
 checkpoints/
 checkpoint_details.json
 .idea/
+youcook2_video/data
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

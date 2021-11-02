@@ -1,4 +1,3 @@
-from typing import Optional
 from typing import Tuple
 
 import attr
@@ -6,10 +5,8 @@ import attr
 
 @attr.s(auto_attribs=True)
 class SlotAttentionParams:
+    # training settings
     lr: float = 0.0004
-    batch_size: int = 64
-    val_batch_size: int = 64
-    data_root: str = "/scratch/ssd004/datasets/youcook/"
     gpus: int = 1
     max_epochs: int = 8
     num_sanity_val_steps: int = 1
@@ -18,10 +15,16 @@ class SlotAttentionParams:
     empty_cache: bool = True
     is_logger_enabled: bool = True
     is_verbose: bool = True
-    num_workers: int = 8
     n_samples: int = 5
     warmup_steps_pct: float = 0.02
     decay_steps_pct: float = 0.2
+
+    # data settings
+    data_root: str = "/scratch/ssd004/datasets/youcook/"
+    num_workers: int = 8
+    batch_size: int = 64
+    val_batch_size: int = 64
+    overfit: int = -1
 
     # model settings
     resolution: Tuple[int, int] = (128, 128)
@@ -35,4 +38,4 @@ class SlotAttentionParams:
     # TODO: should be True in official code!!!
     # TODO: but this codebase set it as False and I've done lots of exp using
     # TODO: it so far... So I set False as the default value
-    learnable_slot = False
+    learnable_slot: bool = False

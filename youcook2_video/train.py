@@ -41,6 +41,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         val_batch_size=params.val_batch_size,
         youcook2_transforms=youcook2_transforms,
         num_workers=params.num_workers,
+        overfit=params.overfit,
     )
 
     model = SlotAttentionModel(

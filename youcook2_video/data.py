@@ -3,15 +3,13 @@ import os
 import cv2
 import numpy as np
 import pandas as pd
+from PIL import Image
 from typing import Callable
-from typing import Optional
-from typing import Tuple
 
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
-from torchvision.transforms import transforms
 
 
 class YouCook2FrameDataset(Dataset):
@@ -21,13 +19,20 @@ class YouCook2FrameDataset(Dataset):
                  data_root: str,
                  youcook2_transforms: Callable,
                  split: str = 'train',
-                 is_video: bool = False):
+                 is_video: bool = False,
+                 overfit: int = -1):
         super().__init__()
         assert split in ['train', 'val', 'test']
         self.data_root = data_root
         self.youcook2_transforms = youcook2_transforms
         self.split = split
         self.is_video = is_video
+        # TODO: if overfit >= 1, then only load these data and repeat them
+        # TODO: if overfit <= 0, then no overfitting
+        assert isinstance(overfit, int)
+        if overfit >= 1:
+            print(f'Training data overfitting to {overfit} examples')
+        self.overfit = overfit
 
         path_name = f'{self.split}ing' if self.split in ['train', 'test'] \
             else 'validation'
@@ -71,7 +76,10 @@ class YouCook2FrameDataset(Dataset):
 
     def _rand_another(self):
         """Randomly get another data if current video is unavailable."""
-        new_idx = np.random.choice(self.total_frames)
+        if self.is_video:
+            new_idx = np.random.choice(self.num_videos)
+        else:
+            new_idx = np.random.choice(self.total_frames)
         return self.__getitem__(new_idx)
 
     def __getitem__(self, index: int):
@@ -82,14 +90,23 @@ class YouCook2FrameDataset(Dataset):
         video_idx = self._frame_idx2video_idx(index)
         frame_idx = index - self.frame_idx[video_idx]
         video_path = self.paths[video_idx]
-        # read only one frame
-        cap = cv2.VideoCapture(video_path)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-        success, img = cap.read()
-        cap.release()
-        if not success:
-            return self._rand_another()
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        vid_id = self.stats[video_idx]['vid_id']
+        # TODO: if frames have been extracted, read from img
+        img_path = os.path.join(
+            os.path.dirname(video_path).replace('raw_videos', 'raw_imgs'),
+            vid_id, f'{vid_id}_{frame_idx:06d}.jpg')
+        if os.path.isfile(img_path):
+            img = Image.open(img_path)
+            img = img.convert("RGB")
+        else:
+            # if img not existed, read one frame from video
+            cap = cv2.VideoCapture(video_path)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            success, img = cap.read()
+            cap.release()
+            if not success:
+                return self._rand_another()
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return self.youcook2_transforms(img)
 
     def __len__(self):
@@ -99,21 +116,41 @@ class YouCook2FrameDataset(Dataset):
         # assume input is video index!
         video_idx = index
         video_path = self.paths[video_idx]
-        cap = cv2.VideoCapture(video_path)
-        success = True
         img_list = []
-        while success:
-            success, img = cap.read()
-            if success:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        vid_id = self.stats[video_idx]['vid_id']
+        # TODO: if frames have been extracted, read from img
+        img_folder = os.path.join(
+            os.path.dirname(video_path).replace('raw_videos', 'raw_imgs'),
+            vid_id)
+        if os.path.exists(img_folder):
+            all_imgs = [
+                fn for fn in os.listdir(img_folder) if fn.endswith('.jpg')
+            ]
+            all_imgs.sort()
+            for filename in all_imgs:
+                img_path = os.path.join(img_folder, filename)
+                img = Image.open(img_path)
+                img = img.convert("RGB")
                 img_list.append(img)
-        cap.release()
+        else:
+            cap = cv2.VideoCapture(video_path)
+            success = True
+            while success:
+                success, img = cap.read()
+                if success:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    img_list.append(img)
+            cap.release()
+        if len(img_list) == 0:
+            return self._rand_another()
         return torch.stack([self.youcook2_transforms(img) for img in img_list],
                            dim=0)
 
     def _get_files(self):
         paths, stats, annos = [], [], []
-        for filename in self.data_files:
+        for i, filename in enumerate(self.data_files):
+            if self.overfit >= 1:
+                filename = self.data_files[i % self.overfit]
             # 'xxx/youcook/raw_videos/training/405/Ysh60eirChU'
             video_name = os.path.join(self.data_path, filename)
             possible_path = [
@@ -148,12 +185,13 @@ class YouCook2FrameDataset(Dataset):
 class YouCook2FrameDataModule(pl.LightningDataModule):
 
     def __init__(
-        self,
-        data_root: str,
-        train_batch_size: int,
-        val_batch_size: int,
-        youcook2_transforms: Callable,
-        num_workers: int,
+            self,
+            data_root: str,
+            train_batch_size: int,
+            val_batch_size: int,
+            youcook2_transforms: Callable,
+            num_workers: int,
+            overfit: int = -1,  # overfit to one training example
     ):
         super().__init__()
         self.data_root = data_root
@@ -161,16 +199,20 @@ class YouCook2FrameDataModule(pl.LightningDataModule):
         self.val_batch_size = val_batch_size
         self.youcook2_transforms = youcook2_transforms
         self.num_workers = num_workers
+        self.overfit = overfit
 
+        train_split = 'val' if self.overfit > 0 else 'train'
         self.train_dataset = YouCook2FrameDataset(
             data_root=self.data_root,
             youcook2_transforms=self.youcook2_transforms,
-            split="train",
+            split=train_split,
+            overfit=self.overfit,
         )
         self.val_dataset = YouCook2FrameDataset(
             data_root=self.data_root,
             youcook2_transforms=self.youcook2_transforms,
-            split="val",
+            split='val',
+            overfit=self.overfit,
         )
 
     def train_dataloader(self):

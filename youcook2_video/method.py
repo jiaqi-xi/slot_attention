@@ -32,17 +32,8 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         train_loss['loss'] = loss
         logs = {key: val.item() for key, val in train_loss.items()}
         # record training time
-        data_time = self.trainer.profiler.recorded_durations[
-            'get_train_batch'][-1]
-        forward_time = self.trainer.profiler.recorded_durations[
-            'model_forward'][-1]
-        backward_time = self.trainer.profiler.recorded_durations[
-            'model_backward'][-1]
-        time_dict = dict(
-            data_time=data_time,
-            forward_time=forward_time,
-            backward_time=backward_time)
-        logs.update(time_dict)
+        logs['data_time'] = \
+            self.trainer.profiler.recorded_durations['get_train_batch'][-1]
         self.log_dict(logs, sync_dist=True)
         return {'loss': loss}
 
