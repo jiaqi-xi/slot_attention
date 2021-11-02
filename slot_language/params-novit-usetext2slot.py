@@ -14,21 +14,22 @@ class SlotAttentionParams:
     num_iterations: int = 3
     # MLP hidden size in Slot Attention
     slot_mlp_size: int = 128  # FFN after cross attention
-    dec_resolution: Tuple[int, int] = (7, 7)
+    dec_resolution: Tuple[int,
+                          int] = (resolution[0] // 16, resolution[1] // 16)
     dec_kernel_size: int = 5
-    dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
+    dec_channels: Tuple[int, ...] = tuple(slot_size for _ in range(4))
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0
 
     # architecture of CLIP pre-trained model
-    use_clip_vision: bool = True
+    use_clip_vision: bool = False
     clip_arch: str = 'ViT-B/32'
-    enc_resolution: Tuple[int, int] = (7, 7)  # (num_patches, num_patches)
-    clip_vision_channel: int = 768
+    enc_resolution: Tuple[int, int] = resolution  # image size
+    clip_vision_channel: int = 64
     clip_text_channel: int = 512
     clip_global_feats: bool = False
-    enc_pos_enc: bool = False
+    enc_pos_enc: bool = True
 
     # Text2Slot model
     use_text2slot: bool = True
@@ -44,8 +45,8 @@ class SlotAttentionParams:
     # training settings
     gpus: int = 1
     lr: float = 0.0004
-    batch_size: int = 64
-    val_batch_size: int = 64
+    batch_size: int = 48
+    val_batch_size: int = 48
     max_epochs: int = 8
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5

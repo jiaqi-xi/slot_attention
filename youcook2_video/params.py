@@ -24,7 +24,7 @@ class SlotAttentionParams:
     num_workers: int = 8
     batch_size: int = 64
     val_batch_size: int = 64
-    overfit: int = -1
+    overfit: int = -1  # overfit to `overfit` data samples
 
     # model settings
     resolution: Tuple[int, int] = (128, 128)

@@ -20,7 +20,8 @@ class YouCook2FrameDataset(Dataset):
                  youcook2_transforms: Callable,
                  split: str = 'train',
                  is_video: bool = False,
-                 overfit: int = -1):
+                 overfit: int = -1,
+                 repeat: bool = False):
         super().__init__()
         assert split in ['train', 'val', 'test']
         self.data_root = data_root
@@ -33,6 +34,11 @@ class YouCook2FrameDataset(Dataset):
         if overfit >= 1:
             print(f'Training data overfitting to {overfit} examples')
         self.overfit = overfit
+        # TODO: whether to repeat data to match normal number
+        # TODO: true for train set, False for test set
+        if repeat:
+            assert overfit >= 1
+        self.repeat = repeat
 
         path_name = f'{self.split}ing' if self.split in ['train', 'test'] \
             else 'validation'
@@ -150,6 +156,10 @@ class YouCook2FrameDataset(Dataset):
         paths, stats, annos = [], [], []
         for i, filename in enumerate(self.data_files):
             if self.overfit >= 1:
+                # no repeating for testing
+                if i >= self.overfit and not self.repeat:
+                    break
+                # repeat for training
                 filename = self.data_files[i % self.overfit]
             # 'xxx/youcook/raw_videos/training/405/Ysh60eirChU'
             video_name = os.path.join(self.data_path, filename)
@@ -207,12 +217,14 @@ class YouCook2FrameDataModule(pl.LightningDataModule):
             youcook2_transforms=self.youcook2_transforms,
             split=train_split,
             overfit=self.overfit,
+            repeat=True,
         )
         self.val_dataset = YouCook2FrameDataset(
             data_root=self.data_root,
             youcook2_transforms=self.youcook2_transforms,
             split='val',
             overfit=self.overfit,
+            repeat=False,
         )
 
     def train_dataloader(self):

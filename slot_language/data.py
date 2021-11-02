@@ -19,18 +19,20 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
     """
 
     def __init__(
-        self,
-        data_root: str,
-        max_num_images: Optional[int],
-        clip_transforms: Callable,
-        max_n_objects: int = 10,
-        split: str = "train",
-        clip_len: int = 34,  # TODO: assume each video has same length!
-        is_video: bool = False,  # if True, return the entire video
-        # whether generate separate texts for different time period
-        # if False, just concat all three actions as one sentence
+            self,
+            data_root: str,
+            max_num_images: Optional[int],
+            clip_transforms: Callable,
+            max_n_objects: int = 10,
+            split: str = "train",
+            clip_len: int = 34,  # TODO: assume each video has same length!
+            is_video: bool = False,  # if True, return the entire video
+            # whether generate separate texts for different time period
+            # if False, just concat all three actions as one sentence
         fine_grained: bool = True,
-    ):
+            object_only: bool = False,  # only use "[color] [shape]" as text
+            overfit: int = -1,
+            repeat: bool = False):
         super().__init__()
         self.data_root = data_root
         self.data_path = os.path.join(data_root, "images")
@@ -45,6 +47,18 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         self.clip_transforms = clip_transforms
         self.max_n_objects = max_n_objects
 
+        # TODO: if overfit >= 1, then only load these data and repeat them
+        # TODO: if overfit <= 0, then no overfitting
+        assert isinstance(overfit, int)
+        if overfit >= 1:
+            print(f'Training data overfitting to {overfit} examples')
+        self.overfit = overfit
+        # TODO: whether to repeat data to match normal number
+        # TODO: true for train set, False for test set
+        if repeat:
+            assert overfit >= 1
+        self.repeat = repeat
+
         with open(os.path.join('./data/', f'{split}_annos.json'), 'r') as f:
             self.anno_paths = json.load(f)
         self.anno_paths.sort()
@@ -54,6 +68,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         self.clip_len = clip_len
         self.is_video = is_video
         self.fine_grained = fine_grained
+        self.object_only = object_only
 
         # pattern for text generation
         self.pattern0_1 = 'lift up the {color} {shape}'
@@ -153,22 +168,30 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         object_colors = [obj['color'] for obj in anno['objects']]
         object_shapes = [obj['shape'] for obj in anno['objects']]
         actions = anno['actions']
-        text0_1 = self.pattern0_1.format(
-            color=object_colors[0], shape=object_shapes[0])
-        text0_2 = self.pattern0_2.format(
-            color=object_colors[0], shape=object_shapes[0])
-        text1 = self.pattern1.format(
-            color1=object_colors[1],
-            shape1=object_shapes[1],
-            pos=self.POS[actions[0]],
-            color2=object_colors[0],
-            shape2=object_shapes[0])
-        text2 = self.pattern2.format(
-            color1=object_colors[2],
-            shape1=object_shapes[2],
-            pos=self.POS[actions[2]],
-            color2=object_colors[actions[1] - 1],
-            shape2=object_shapes[actions[1] - 1])
+        if self.object_only:
+            text0_2 = text0_1 = f'{object_colors[0]} {object_shapes[0]}'
+            text1 = f'{object_colors[1]} {object_shapes[1]}, ' \
+                    f'{object_colors[0]} {object_shapes[0]}'
+            text2 = f'{object_colors[2]} {object_shapes[2]}, ' \
+                    f'{object_colors[actions[1] - 1]} ' \
+                    f'{object_shapes[actions[1] - 1]}'
+        else:
+            text0_1 = self.pattern0_1.format(
+                color=object_colors[0], shape=object_shapes[0])
+            text0_2 = self.pattern0_2.format(
+                color=object_colors[0], shape=object_shapes[0])
+            text1 = self.pattern1.format(
+                color1=object_colors[1],
+                shape1=object_shapes[1],
+                pos=self.POS[actions[0]],
+                color2=object_colors[0],
+                shape2=object_shapes[0])
+            text2 = self.pattern2.format(
+                color1=object_colors[2],
+                shape1=object_shapes[2],
+                pos=self.POS[actions[2]],
+                color2=object_colors[actions[1] - 1],
+                shape2=object_shapes[actions[1] - 1])
         if not self.fine_grained:
             # just concat them with ','
             text = f'{text0_1}, {text0_2}, {text1}, {text2}'
@@ -188,10 +211,16 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
     def get_files(self) -> List[str]:
         """Load the image (video) path and loaded annotations (lists)."""
         img_paths, all_annos = [], []
-        for anno_name in self.anno_paths:
+        for i, anno_name in enumerate(self.anno_paths):
             if self.max_num_images is not None and \
                     len(img_paths) > self.max_num_images:
                 break
+            if self.overfit >= 1:
+                # no repeating for testing
+                if i >= self.overfit and not self.repeat:
+                    break
+                # repeat for training
+                anno_name = self.anno_paths[i % self.overfit]
             anno_path = os.path.join(self.data_root, 'scenes', anno_name)
             with open(anno_path, 'r') as f:
                 anno = json.load(f)
@@ -214,16 +243,17 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
 class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
 
     def __init__(
-        self,
-        data_root: str,
-        train_batch_size: int,
-        val_batch_size: int,
-        clip_transforms: Callable,
-        max_n_objects: int,
-        num_workers: int,
-        num_train_images: Optional[int] = None,
-        num_val_images: Optional[int] = None,
-        fine_grained: bool = True,
+            self,
+            data_root: str,
+            train_batch_size: int,
+            val_batch_size: int,
+            clip_transforms: Callable,
+            max_n_objects: int,
+            num_workers: int,
+            num_train_images: Optional[int] = None,
+            num_val_images: Optional[int] = None,
+            fine_grained: bool = True,
+            overfit: int = -1,  # overfit to one training example
     ):
         super().__init__()
         self.data_root = data_root
@@ -235,22 +265,26 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
         self.num_train_images = num_train_images
         self.num_val_images = num_val_images
         self.fine_grained = fine_grained
+        self.overfit = overfit
 
+        train_split = 'val' if self.overfit > 0 else 'train'
         self.train_dataset = CLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
             clip_transforms=self.clip_transforms,
-            split="train",
+            split=train_split,
             max_n_objects=self.max_n_objects,
             fine_grained=self.fine_grained,
+            repeat=True,
         )
         self.val_dataset = CLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_val_images,
             clip_transforms=self.clip_transforms,
-            split="val",
+            split='val',
             max_n_objects=self.max_n_objects,
             fine_grained=self.fine_grained,
+            repeat=False,
         )
 
     def train_dataloader(self):

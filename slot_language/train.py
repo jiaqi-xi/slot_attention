@@ -79,6 +79,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         num_train_images=params.num_train_images,
         num_val_images=params.num_val_images,
         fine_grained=params.fine_grained,
+        overfit=params.overfit,
     )
 
     print('Not using max_object_num constraint here!')
