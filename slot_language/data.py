@@ -87,8 +87,17 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         """Load one video and get only one frame from it"""
         if self.is_video:
             video = self._get_video(index)  # clip pre-processed video frames
-            raw_text = self._generate_text(index * self.clip_len)  # raw
-            text = clip.tokenize([raw_text])[0]  # tokenize
+            raw_text = [
+                self._generate_text(index * self.clip_len + idx)
+                for idx in range(self.clip_len)
+            ]  # raw
+            text = clip.tokenize(raw_text)  # tokenize to [N, L]
+            assert text.shape[0] == video.shape[0]
+            if not self.fine_grained:
+                raw_text = raw_text[0]
+            else:
+                raw_text = f'{raw_text[0]}, {raw_text[4]}, ' \
+                           f'{raw_text[8]}, {raw_text[21]}'
             return dict(video=video, text=text, raw_text=raw_text)
 
         img = self._get_frame(index)  # clip pre-processed img tensor
@@ -253,6 +262,7 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
             num_train_images: Optional[int] = None,
             num_val_images: Optional[int] = None,
             fine_grained: bool = True,
+            object_only: bool = False,
             overfit: int = -1,  # overfit to one training example
     ):
         super().__init__()
@@ -275,7 +285,9 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
             split=train_split,
             max_n_objects=self.max_n_objects,
             fine_grained=self.fine_grained,
-            repeat=True,
+            object_only=object_only,
+            overfit=self.overfit,
+            repeat=(self.overfit > 0),
         )
         self.val_dataset = CLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
@@ -284,6 +296,8 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
             split='val',
             max_n_objects=self.max_n_objects,
             fine_grained=self.fine_grained,
+            object_only=object_only,
+            overfit=self.overfit,
             repeat=False,
         )
 

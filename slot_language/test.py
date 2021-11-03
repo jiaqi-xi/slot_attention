@@ -78,7 +78,6 @@ def main(params=None):
 
 def inference(model, dataset, num=3):
     dataset.is_video = True
-    dataset.fine_grained = True
     num_data = dataset.num_videos
     data_idx = np.random.choice(num_data, num, replace=False)
     results = []
@@ -86,7 +85,7 @@ def inference(model, dataset, num=3):
     for idx in data_idx:
         batch = dataset.__getitem__(idx)  # dict with key video, text, raw_text
         video, text, raw_text = \
-            batch['video'], batch['text'].unsqueeze(0), batch['raw_text']
+            batch['video'], batch['text'], batch['raw_text']
         all_texts.append(raw_text)
         batch = dict(img=video.float().cuda(), text=text.float().cuda())
         recon_combined, recons, masks, slots = model(batch)

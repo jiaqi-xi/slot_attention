@@ -217,7 +217,7 @@ class YouCook2FrameDataModule(pl.LightningDataModule):
             youcook2_transforms=self.youcook2_transforms,
             split=train_split,
             overfit=self.overfit,
-            repeat=True,
+            repeat=(self.overfit > 0),
         )
         self.val_dataset = YouCook2FrameDataset(
             data_root=self.data_root,

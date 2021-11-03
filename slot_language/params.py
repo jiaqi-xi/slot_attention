@@ -39,6 +39,8 @@ class SlotAttentionParams:
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     # whether load different text for different video period
     fine_grained: bool = True
+    # whether text is complete action or just object names
+    object_only: bool = False
     overfit: int = -1  # overfit to `overfit` data samples
 
     # training settings

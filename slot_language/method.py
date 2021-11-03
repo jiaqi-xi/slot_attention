@@ -74,7 +74,6 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
     def sample_video(self):
         dst = self.datamodule.val_dataset
         dst.is_video = True  # load entire video
-        dst.fine_grained = False  # load entire text description
         sampled_idx = torch.randperm(dst.num_videos)[:self.params.n_samples]
         results = []
         all_texts = []
@@ -82,7 +81,7 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
             idx = idx.item()
             batch = dst.__getitem__(idx)  # dict with key video, text, raw_text
             video, text, raw_text = \
-                batch['video'], batch['text'].unsqueeze(0), batch['raw_text']
+                batch['video'], batch['text'], batch['raw_text']
             all_texts.append(raw_text)
             batch = dict(img=video, text=text)
             if self.params.gpus > 0:
@@ -109,7 +108,6 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
             results.append(video)
 
         dst.is_video = False
-        dst.fine_grained = True
         video = torch.cat(results, dim=2)  # [T, 3, B*H, (num_slots+2)*W]
         text = '\n'.join(all_texts)
 

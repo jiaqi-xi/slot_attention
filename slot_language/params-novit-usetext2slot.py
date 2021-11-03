@@ -17,7 +17,7 @@ class SlotAttentionParams:
     dec_resolution: Tuple[int,
                           int] = (resolution[0] // 16, resolution[1] // 16)
     dec_kernel_size: int = 5
-    dec_channels: Tuple[int, ...] = tuple(slot_size for _ in range(4))
+    dec_channels: Tuple[int, ...] = tuple(64 for _ in range(4))
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0
@@ -40,6 +40,8 @@ class SlotAttentionParams:
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     # whether load different text for different video period
     fine_grained: bool = True
+    # whether text is complete action or just object names
+    object_only: bool = False
     overfit: int = -1  # overfit to `overfit` data samples
 
     # training settings

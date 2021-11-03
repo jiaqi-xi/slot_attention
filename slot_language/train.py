@@ -40,6 +40,22 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     # load pre-trained CLIP model
     clip_model, clip_transforms = clip.load(params.clip_arch)
+    if not params.use_clip_vision:
+        from torchvision.transforms import Compose, Resize, ToTensor, Normalize
+        from torchvision.transforms import InterpolationMode
+        BICUBIC = InterpolationMode.BICUBIC
+
+        def _convert_image_to_rgb(image):
+            return image.convert("RGB")
+
+        clip_transforms = Compose([
+            Resize(params.resolution, interpolation=BICUBIC),
+            _convert_image_to_rgb,
+            ToTensor(),
+            Normalize((0.48145466, 0.4578275, 0.40821073),
+                      (0.26862954, 0.26130258, 0.27577711)),
+        ])
+
     text2slot_model = Text2Slot(
         params.clip_text_channel,
         params.num_slots,
@@ -79,6 +95,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         num_train_images=params.num_train_images,
         num_val_images=params.num_val_images,
         fine_grained=params.fine_grained,
+        object_only=params.object_only,
         overfit=params.overfit,
     )
 
