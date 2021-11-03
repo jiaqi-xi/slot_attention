@@ -7,7 +7,7 @@ import attr
 @attr.s(auto_attribs=True)
 class SlotAttentionParams:
     # model configs
-    resolution: Tuple[int, int] = (224, 224)
+    resolution: Tuple[int, int] = (128, 128)  # since we not using ViT
     num_slots: int = 7  # at most 6 obj per image/video
     # dim of slots embedding
     slot_size: int = 64
@@ -33,23 +33,25 @@ class SlotAttentionParams:
 
     # Text2Slot model
     use_text2slot: bool = True
-    text2slot_arch: str = 'MLP'  # or 'Transformer'
+    text2slot_arch: str = 'Transformer'
     # for MLP
     text2slot_hidden_sizes: Tuple[int] = (256, )
-    predict_slot_dist: bool = True
+    predict_slot_dist: bool = False  # directly predict for each slot
     # for Transformer
     text2slot_hidden: int = 64
     text2slot_nhead: int = 1
-    text2slot_num_layers: int = 2
+    text2slot_num_transformers: int = 2
     text2slot_dim_feedforward: int = 256
     text2slot_dropout: float = 0.1
     text2slot_activation: str = 'relu'
+    text2slot_text_pe: bool = True
     text2slot_padding_mask: bool = True
+    text2slot_mlp_layers: int = 2
 
     # data
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     # Normalization for natural img or original slot attention one
-    simple_normalize: bool = False
+    simple_normalize: bool = True  # since we not using ViT
     # whether load different text for different video period
     fine_grained: bool = True
     # whether text is complete action or just object names
@@ -59,8 +61,8 @@ class SlotAttentionParams:
     # training settings
     gpus: int = 1
     lr: float = 0.0004
-    batch_size: int = 48
-    val_batch_size: int = 48
+    batch_size: int = 64
+    val_batch_size: int = 64
     max_epochs: int = 8
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5

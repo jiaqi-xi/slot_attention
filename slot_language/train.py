@@ -75,10 +75,12 @@ def main(params: Optional[SlotAttentionParams] = None):
             params.slot_size,
             params.text2slot_hidden,
             params.text2slot_nhead,
-            params.text2slot_num_layers,
+            params.text2slot_num_transformers,
             params.text2slot_dim_feedforward,
             dropout=params.text2slot_dropout,
-            activation=params.text2slot_activation)
+            activation=params.text2slot_activation,
+            text_pe=params.text2slot_text_pe,
+            out_mlp_layers=params.text2slot_mlp_layers)
 
     model = SlotAttentionModel(
         clip_model=clip_model,

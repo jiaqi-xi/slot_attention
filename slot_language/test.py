@@ -12,7 +12,7 @@ from data import CLEVRVisionLanguageCLIPDataModule
 from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from model import SlotAttentionModel
 from params import SlotAttentionParams
-from utils import to_rgb_from_tensor, save_video
+from utils import to_rgb_from_tensor, save_video, simple_rescale
 
 
 def main(params=None):
@@ -20,6 +20,26 @@ def main(params=None):
         params = SlotAttentionParams()
 
     clip_model, clip_transforms = clip.load(params.clip_arch)
+    if not params.use_clip_vision:
+        from torchvision.transforms import Compose, Resize, ToTensor, \
+            Normalize, Lambda
+        from torchvision.transforms import InterpolationMode
+        BICUBIC = InterpolationMode.BICUBIC
+
+        def _convert_image_to_rgb(image):
+            return image.convert("RGB")
+
+        normalize = Lambda(
+            simple_rescale) if params.simple_normalize else Normalize(
+                (0.48145466, 0.4578275, 0.40821073),
+                (0.26862954, 0.26130258, 0.27577711))
+        clip_transforms = Compose([
+            Resize(params.resolution, interpolation=BICUBIC),
+            _convert_image_to_rgb,
+            ToTensor(),
+            normalize,
+        ])
+
     if not params.use_text2slot:
         text2slot_model = None
     elif params.text2slot_arch == 'MLP':
@@ -40,14 +60,19 @@ def main(params=None):
             params.text2slot_num_layers,
             params.text2slot_dim_feedforward,
             dropout=params.text2slot_dropout,
-            activation=params.text2slot_activation)
+            activation=params.text2slot_activation,
+            text_pe=params.text2slot_text_pe,
+            out_mlp_layers=params.text2slot_mlp_layers)
 
     model = SlotAttentionModel(
         clip_model=clip_model,
+        use_clip_vision=params.use_clip_vision,
+        use_clip_text=params.use_text2slot,
         text2slot_model=text2slot_model,
         resolution=params.resolution,
         num_slots=params.num_slots,
         num_iterations=params.num_iterations,
+        enc_resolution=params.enc_resolution,
         enc_channels=params.clip_vision_channel,
         enc_global_feats=params.clip_global_feats,
         enc_pos_enc=params.enc_pos_enc,
@@ -57,9 +82,11 @@ def main(params=None):
         dec_resolution=params.dec_resolution,
         empty_cache=params.empty_cache,
         slot_mlp_size=params.slot_mlp_size,
-        use_word_set=params.text2slot_arch == 'Transformer',
-        use_padding_mask=params.text2slot_padding_mask,
-        use_entropy_loss=params.use_entropy_loss,
+        use_word_set=params.use_text2slot
+        and params.text2slot_arch == 'Transformer',
+        use_padding_mask=params.use_text2slot
+        and params.text2slot_arch == 'Transformer'
+        and params.text2slot_padding_mask,
     )
 
     clevr_datamodule = CLEVRVisionLanguageCLIPDataModule(
@@ -72,6 +99,7 @@ def main(params=None):
         num_train_images=params.num_train_images,
         num_val_images=params.num_val_images,
         fine_grained=params.fine_grained,
+        object_only=params.object_only,
     )
 
     model = SlotAttentionMethod(

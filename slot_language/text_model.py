@@ -93,42 +93,49 @@ class TransformerText2Slot(nn.Module):
                  in_channels: int,
                  num_slots: int,
                  slot_size: int = 64,
+                 text_length: int = 77,
                  d_model: int = 64,
                  nhead: int = 1,
                  num_layers: int = 2,
                  dim_feedforward: int = 256,
                  dropout: float = 0.1,
-                 activation: str = 'relu'):
+                 activation: str = 'relu',
+                 text_pe: bool = True,
+                 out_mlp_layers: int = 2):
         super(TransformerText2Slot, self).__init__()
-        self.d_model = d_model
-        self.nhead = nhead
-        self.num_layers = num_layers
-        self.dim_feedforward = dim_feedforward
-
-        if in_channels != self.d_model:
-            self.input_proj = nn.Linear(in_channels, self.d_model, bias=True)
-        else:
-            self.input_proj = nn.Identity()
-        if slot_size != self.d_model:
-            self.output_proj = nn.Linear(self.d_model, slot_size, bias=True)
-        else:
-            self.output_proj = nn.Identity()
 
         # Transformer decoder for query, language interaction
         decoder_layer = TransformerDecoderLayer(
-            self.d_model,
-            self.nhead,
-            dim_feedforward=self.dim_feedforward,
+            d_model,
+            nhead,
+            dim_feedforward=dim_feedforward,
             dropout=dropout,
             activation=activation)
-        norm = nn.LayerNorm(self.d_model)
+        norm = nn.LayerNorm(d_model)
         self.decoder = TransformerDecoder(
-            decoder_layer=decoder_layer, num_layers=self.num_layers, norm=norm)
-
+            decoder_layer=decoder_layer, num_layers=num_layers, norm=norm)
+        # reset params as in MaskFormer
         self._reset_parameters()
 
+        if in_channels != d_model:
+            self.input_proj = nn.Linear(in_channels, d_model, bias=True)
+        else:
+            self.input_proj = nn.Identity()
+        hidden_dims = [d_model for _ in range(out_mlp_layers - 1)]
+        self.output_proj = build_mlps(
+            d_model, hidden_dims, slot_size, use_bn=False)
+
         # learnable queries to interact with language features
-        self.query_embed = nn.Embedding(num_slots, self.d_model)
+        self.query_embed = nn.Embedding(num_slots, d_model)
+        nn.init.xavier_uniform_(  # as the slot_mu/sigma in slot-attention
+            self.query_embed.weight,
+            gain=nn.init.calculate_gain("linear"))
+
+        # learnable positional embedding for text features
+        self.text_pe = text_pe
+        if self.text_pe:
+            self.text_pos_embed = nn.Embedding(text_length, d_model)
+            nn.init.normal_(self.text_pos_embed.weight, std=0.01)
 
     def forward(self, inputs: dict):
         """Forward function.
@@ -144,10 +151,13 @@ class TransformerText2Slot(nn.Module):
             text_features = inputs
             text_padding_mask = None
         bs = text_features.shape[0]
-        query_embed = self.query_embed.weight.unsqueeze(0).repeat(bs, 1, 1)
+        query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1)
         text_features = self.input_proj(text_features)
+        if self.text_pe:  # do positional encoding
+            text_features = text_features + \
+                self.text_pos_embed.weight.unsqueeze(0)
         pred_slots = self.decoder(
-            query_embed.permute(1, 0, 2).contiguous(),
+            query_embed,
             text_features.permute(1, 0, 2).contiguous(),
             memory_key_padding_mask=text_padding_mask,
         ).permute(1, 0, 2).contiguous()  # [B, num_slots, D]
