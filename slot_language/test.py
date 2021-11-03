@@ -7,7 +7,7 @@ import torch
 from torchvision import utils as vutils
 
 import clip
-from text_model import Text2Slot
+from text_model import MLPText2Slot, TransformerText2Slot
 from data import CLEVRVisionLanguageCLIPDataModule
 from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from model import SlotAttentionModel
@@ -20,13 +20,27 @@ def main(params=None):
         params = SlotAttentionParams()
 
     clip_model, clip_transforms = clip.load(params.clip_arch)
-    text2slot_model = Text2Slot(
-        params.clip_text_channel,
-        params.num_slots,
-        params.slot_size,
-        params.text2slot_hidden_sizes,
-        predict_dist=params.predict_slot_dist,
-        use_bn=False)
+    if not params.use_text2slot:
+        text2slot_model = None
+    elif params.text2slot_arch == 'MLP':
+        text2slot_model = MLPText2Slot(
+            params.clip_text_channel,
+            params.num_slots,
+            params.slot_size,
+            params.text2slot_hidden_sizes,
+            predict_dist=params.predict_slot_dist,
+            use_bn=False)
+    else:
+        text2slot_model = TransformerText2Slot(
+            params.clip_text_channel,
+            params.num_slots,
+            params.slot_size,
+            params.text2slot_hidden,
+            params.text2slot_nhead,
+            params.text2slot_num_layers,
+            params.text2slot_dim_feedforward,
+            dropout=params.text2slot_dropout,
+            activation=params.text2slot_activation)
 
     model = SlotAttentionModel(
         clip_model=clip_model,
@@ -43,6 +57,8 @@ def main(params=None):
         dec_resolution=params.dec_resolution,
         empty_cache=params.empty_cache,
         slot_mlp_size=params.slot_mlp_size,
+        use_word_set=params.text2slot_arch == 'Transformer',
+        use_padding_mask=params.text2slot_padding_mask,
         use_entropy_loss=params.use_entropy_loss,
     )
 

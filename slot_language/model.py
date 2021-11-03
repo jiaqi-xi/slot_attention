@@ -5,7 +5,6 @@ from torch import nn
 from torch.nn import functional as F
 
 from clip import CLIP
-from text_model import Text2Slot
 from utils import Tensor, assert_shape, build_grid, conv_transpose_out_shape
 
 
@@ -153,7 +152,7 @@ class SlotAttentionModel(nn.Module):
         clip_model: CLIP,
         use_clip_vision: bool,
         use_clip_text: bool,
-        text2slot_model: Text2Slot,  # if None, then don't use it here
+        text2slot_model: nn.Module,  # if None, then don't use it here
         resolution: Tuple[int, int],
         num_slots: int,
         num_iterations: int,
@@ -167,6 +166,8 @@ class SlotAttentionModel(nn.Module):
         dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224
         empty_cache: bool = False,
         slot_mlp_size: int = 128,
+        use_word_set: bool = False,
+        use_padding_mask: bool = False,
         use_entropy_loss: bool = False,
     ):
         super().__init__()
@@ -183,6 +184,8 @@ class SlotAttentionModel(nn.Module):
         self.dec_hidden_dims = dec_hidden_dims
         self.dec_resolution = dec_resolution
         self.slot_mlp_size = slot_mlp_size
+        self.use_word_set = use_word_set
+        self.use_padding_mask = use_padding_mask
         self.out_features = self.dec_hidden_dims[-1]
 
         # Pre-trained CLIP model, we freeze it here
@@ -319,7 +322,11 @@ class SlotAttentionModel(nn.Module):
         if not self.use_clip_text:
             # not generating slots
             return None, None
-        text_features = self.clip_model.encode_text(text, lin_proj=False)  # BC
+        text_features = self.clip_model.encode_text(
+            text,
+            lin_proj=False,
+            per_token_emb=self.use_word_set,
+            return_mask=self.use_padding_mask)  # BC or BLC
         text_features = text_features.type(self.dtype)
         slot_mu, slot_log_sigma = self.text2slot_model(text_features)
         return slot_mu, slot_log_sigma

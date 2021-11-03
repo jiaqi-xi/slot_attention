@@ -32,8 +32,18 @@ class SlotAttentionParams:
 
     # Text2Slot model
     use_text2slot: bool = True
+    text2slot_arch: str = 'MLP'  # or 'Transformer'
+    # for MLP
     text2slot_hidden_sizes: Tuple[int] = (256, )
     predict_slot_dist: bool = True
+    # for Transformer
+    text2slot_hidden: int = 64
+    text2slot_nhead: int = 1
+    text2slot_num_layers: int = 2
+    text2slot_dim_feedforward: int = 256
+    text2slot_dropout: float = 0.1
+    text2slot_activation: str = 'relu'
+    text2slot_padding_mask: bool = True
 
     # data
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
