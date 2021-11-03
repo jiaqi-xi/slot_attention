@@ -47,6 +47,8 @@ class SlotAttentionParams:
 
     # data
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
+    # Normalization for natural img or original slot attention one
+    simple_normalize: bool = False
     # whether load different text for different video period
     fine_grained: bool = True
     # whether text is complete action or just object names

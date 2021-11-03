@@ -326,8 +326,14 @@ class SlotAttentionModel(nn.Module):
             text,
             lin_proj=False,
             per_token_emb=self.use_word_set,
-            return_mask=self.use_padding_mask)  # BC or BLC
-        text_features = text_features.type(self.dtype)
+            return_mask=self.use_padding_mask)  # BC or BLC + padding mask
+        if self.use_padding_mask:
+            text_features, padding_mask = text_features[0].type(self.dtype), \
+                text_features[1].type(self.dtype)
+            text_features = dict(
+                text_features=text_features, padding_mask=padding_mask)
+        else:
+            text_features = text_features.type(self.dtype)
         slot_mu, slot_log_sigma = self.text2slot_model(text_features)
         return slot_mu, slot_log_sigma
 

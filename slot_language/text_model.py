@@ -128,23 +128,29 @@ class TransformerText2Slot(nn.Module):
         self._reset_parameters()
 
         # learnable queries to interact with language features
-        self.query_embed = nn.Embedding(num_slots, slot_size)
+        self.query_embed = nn.Embedding(num_slots, self.d_model)
 
-    def forward(self, text_features: Tensor, text_padding_mask: Tensor = None):
+    def forward(self, inputs: dict):
         """Forward function.
 
         Args:
             text_features: [B, L, C], features extracted for *each* word.
             text_padding_mask: [B, L], mask indicating padded position
         """
+        if isinstance(inputs, dict):
+            text_features = inputs['text_features']
+            text_padding_mask = inputs.get('text_padding_mask')
+        else:
+            text_features = inputs
+            text_padding_mask = None
         bs = text_features.shape[0]
-        query_embed = self.query_embed.unsqueeze(0).repeat(bs, 1, 1)
+        query_embed = self.query_embed.weight.unsqueeze(0).repeat(bs, 1, 1)
         text_features = self.input_proj(text_features)
         pred_slots = self.decoder(
-            query_embed.permute(1, 0, 2),
-            text_features.permute(1, 0, 2),
+            query_embed.permute(1, 0, 2).contiguous(),
+            text_features.permute(1, 0, 2).contiguous(),
             memory_key_padding_mask=text_padding_mask,
-        ).permute(1, 0, 2)  # [B, num_slots, D]
+        ).permute(1, 0, 2).contiguous()  # [B, num_slots, D]
         pred_slots = self.output_proj(pred_slots)
         return pred_slots, None
 

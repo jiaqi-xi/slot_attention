@@ -87,14 +87,21 @@ class VideoLogCallback(Callback):
                     commit=False)
 
 
+def simple_rescale(x: Tensor) -> Tensor:
+    return x * 2. - 1.
+
+
 def to_rgb_from_tensor(x: Tensor,
                        mean=(0.48145466, 0.4578275, 0.40821073),
                        std=(0.26862954, 0.26130258, 0.27577711)):
     """Reverse the Normalize operation in torchvision."""
+    if -1. <= x.min().item() <= x.max().item() <= 1.:
+        # this is from simple_rescale
+        return (x * 0.5 + 0.5).clamp(0, 1)
     assert len(x.shape) == 5, f'x shape {x.shape} is not [B, slots, 3, H, W]'
     for i in range(3):
         x[:, :, i].mul_(std[i]).add_(mean[i])
-    return x
+    return x.clamp(0, 1)
 
 
 def save_video(video, save_path, fps=30, codec='mp4v'):

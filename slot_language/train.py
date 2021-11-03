@@ -4,7 +4,6 @@ import argparse
 import numpy as np
 from typing import Optional
 
-import torch
 import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -13,7 +12,7 @@ import clip
 from text_model import MLPText2Slot, TransformerText2Slot
 from data import CLEVRVisionLanguageCLIPDataModule
 from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from utils import VideoLogCallback, ImageLogCallback
+from utils import VideoLogCallback, ImageLogCallback, simple_rescale
 from model import SlotAttentionModel
 from params import SlotAttentionParams
 
@@ -25,8 +24,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     assert params.num_slots > 1, "Must have at least 2 slots."
 
     if params.is_verbose:
-        print("INFO: limiting the dataset to only images with "
-              f"`num_slots - 1` ({params.num_slots - 1}) objects.")
+        print(f"INFO: model has {params.num_slots} slots")
         if params.num_train_images:
             print("INFO: restricting the train dataset size to "
                   f"`num_train_images`: {params.num_train_images}")
@@ -41,19 +39,23 @@ def main(params: Optional[SlotAttentionParams] = None):
     # load pre-trained CLIP model
     clip_model, clip_transforms = clip.load(params.clip_arch)
     if not params.use_clip_vision:
-        from torchvision.transforms import Compose, Resize, ToTensor, Normalize
+        from torchvision.transforms import Compose, Resize, ToTensor, \
+            Normalize, Lambda
         from torchvision.transforms import InterpolationMode
         BICUBIC = InterpolationMode.BICUBIC
 
         def _convert_image_to_rgb(image):
             return image.convert("RGB")
 
+        normalize = Lambda(
+            simple_rescale) if params.simple_normalize else Normalize(
+                (0.48145466, 0.4578275, 0.40821073),
+                (0.26862954, 0.26130258, 0.27577711))
         clip_transforms = Compose([
             Resize(params.resolution, interpolation=BICUBIC),
             _convert_image_to_rgb,
             ToTensor(),
-            Normalize((0.48145466, 0.4578275, 0.40821073),
-                      (0.26862954, 0.26130258, 0.27577711)),
+            normalize,
         ])
 
     if not params.use_text2slot:
@@ -96,8 +98,11 @@ def main(params: Optional[SlotAttentionParams] = None):
         dec_resolution=params.dec_resolution,
         empty_cache=params.empty_cache,
         slot_mlp_size=params.slot_mlp_size,
-        use_word_set=params.text2slot_arch == 'Transformer',
-        use_padding_mask=params.text2slot_padding_mask,
+        use_word_set=params.use_text2slot
+        and params.text2slot_arch == 'Transformer',
+        use_padding_mask=params.use_text2slot
+        and params.text2slot_arch == 'Transformer'
+        and params.text2slot_padding_mask,
         use_entropy_loss=params.use_entropy_loss,
     )
 
@@ -139,7 +144,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         monitor="val_recon_loss",
         dirpath=ckp_path,
         filename="CLEVRVideo{epoch:03d}-val_loss_{val_recon_loss:.4f}",
-        save_top_k=3,
+        save_top_k=2,
         mode="min",
     )
 
