@@ -18,6 +18,7 @@ class SlotAttentionParams:
                           int] = (resolution[0] // 16, resolution[1] // 16)
     dec_kernel_size: int = 5
     dec_channels: Tuple[int, ...] = tuple(64 for _ in range(4))
+    dec_pos_enc: bool = True
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0
@@ -28,7 +29,6 @@ class SlotAttentionParams:
     enc_resolution: Tuple[int, int] = resolution  # image size
     clip_vision_channel: int = 64
     clip_text_channel: int = 512
-    clip_global_feats: bool = False
     enc_pos_enc: bool = True
 
     # Text2Slot model
@@ -56,6 +56,8 @@ class SlotAttentionParams:
     fine_grained: bool = True
     # whether text is complete action or just object names
     object_only: bool = False
+    # separater to connect different words
+    separater: str = ', '
     overfit: int = -1  # overfit to `overfit` data samples
 
     # training settings
@@ -69,7 +71,6 @@ class SlotAttentionParams:
     weight_decay: float = 0.0
     num_train_images: Optional[int] = None
     num_val_images: Optional[int] = None
-    empty_cache: bool = True
     is_logger_enabled: bool = True
     is_verbose: bool = True
     num_workers: int = 4

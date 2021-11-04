@@ -55,10 +55,10 @@ def main(params=None):
             params.clip_text_channel,
             params.num_slots,
             params.slot_size,
-            params.text2slot_hidden,
-            params.text2slot_nhead,
-            params.text2slot_num_layers,
-            params.text2slot_dim_feedforward,
+            d_model=params.text2slot_hidden,
+            nhead=params.text2slot_nhead,
+            num_layers=params.text2slot_num_transformers,
+            dim_feedforward=params.text2slot_dim_feedforward,
             dropout=params.text2slot_dropout,
             activation=params.text2slot_activation,
             text_pe=params.text2slot_text_pe,
@@ -74,13 +74,12 @@ def main(params=None):
         num_iterations=params.num_iterations,
         enc_resolution=params.enc_resolution,
         enc_channels=params.clip_vision_channel,
-        enc_global_feats=params.clip_global_feats,
         enc_pos_enc=params.enc_pos_enc,
         slot_size=params.slot_size,
         dec_kernel_size=params.dec_kernel_size,
         dec_hidden_dims=params.dec_channels,
         dec_resolution=params.dec_resolution,
-        empty_cache=params.empty_cache,
+        dec_pos_enc=params.dec_pos_enc,
         slot_mlp_size=params.slot_mlp_size,
         use_word_set=params.use_text2slot
         and params.text2slot_arch == 'Transformer',
@@ -100,6 +99,7 @@ def main(params=None):
         num_val_images=params.num_val_images,
         fine_grained=params.fine_grained,
         object_only=params.object_only,
+        separater=params.separater,
     )
 
     model = SlotAttentionMethod(

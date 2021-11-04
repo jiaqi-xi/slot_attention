@@ -158,13 +158,12 @@ class SlotAttentionModel(nn.Module):
         num_iterations: int,
         enc_resolution: Tuple[int, int] = (7, 7),
         enc_channels: int = 3,  # output channel of pre-trained encoder
-        enc_global_feats: bool = False,  # should use patch features?
         enc_pos_enc: bool = False,  # because CLIP's vision encoder already has?
         slot_size: int = 64,
-        dec_kernel_size: int = 3,
+        dec_kernel_size: int = 5,
         dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
         dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224
-        empty_cache: bool = False,
+        dec_pos_enc: bool = True,
         slot_mlp_size: int = 128,
         use_word_set: bool = False,
         use_padding_mask: bool = False,
@@ -176,13 +175,12 @@ class SlotAttentionModel(nn.Module):
         self.num_iterations = num_iterations
         self.enc_resolution = enc_resolution
         self.enc_channels = enc_channels
-        self.enc_global_feats = enc_global_feats
         self.enc_pos_enc = enc_pos_enc
         self.dec_kernel_size = dec_kernel_size
         self.slot_size = slot_size
-        self.empty_cache = empty_cache
         self.dec_hidden_dims = dec_hidden_dims
         self.dec_resolution = dec_resolution
+        self.dec_pos_enc = dec_pos_enc
         self.slot_mlp_size = slot_mlp_size
         self.use_word_set = use_word_set
         self.use_padding_mask = use_padding_mask
@@ -284,8 +282,9 @@ class SlotAttentionModel(nn.Module):
             ))
 
         self.decoder = nn.Sequential(*modules)
-        self.decoder_pos_embedding = SoftPositionEmbed(3, self.out_features,
-                                                       self.dec_resolution)
+        if self.dec_pos_enc:
+            self.decoder_pos_embedding = SoftPositionEmbed(
+                3, self.out_features, self.dec_resolution)
 
         self.slot_attention = SlotAttention(
             in_features=self.out_features,
@@ -301,8 +300,7 @@ class SlotAttentionModel(nn.Module):
         """Encode image, potentially add pos enc, apply MLP."""
         if self.use_clip_vision:
             encoder_out = self.clip_model.encode_image(
-                img, global_feats=self.enc_global_feats,
-                downstream=True)  # BCDD
+                img, global_feats=False, downstream=True)  # BCDD
             encoder_out = encoder_out.type(self.dtype)
         else:
             encoder_out = self.encoder(img)
@@ -338,8 +336,7 @@ class SlotAttentionModel(nn.Module):
         return slot_mu, slot_log_sigma
 
     def forward(self, x):
-        if self.empty_cache:
-            torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
         img, text = x['img'], x['text']
         batch_size, num_channels, height, width = img.shape
@@ -359,8 +356,9 @@ class SlotAttentionModel(nn.Module):
         decoder_in = slots.repeat(1, 1, self.dec_resolution[0],
                                   self.dec_resolution[1])
 
-        out = self.decoder_pos_embedding(decoder_in)
-        out = self.decoder(out)
+        if self.dec_pos_enc:
+            decoder_in = self.decoder_pos_embedding(decoder_in)
+        out = self.decoder(decoder_in)
         # `out` has shape: [batch_size*num_slots, num_channels+1, height, width].
 
         out = out.view(batch_size, num_slots, num_channels + 1, height, width)

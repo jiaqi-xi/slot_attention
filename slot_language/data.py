@@ -25,12 +25,13 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
             clip_transforms: Callable,
             max_n_objects: int = 10,
             split: str = "train",
-            clip_len: int = 34,  # TODO: assume each video has same length!
-            is_video: bool = False,  # if True, return the entire video
+            clip_len: int = 34,
+            is_video: bool = False,
             # whether generate separate texts for different time period
             # if False, just concat all three actions as one sentence
-        fine_grained: bool = True,
+            fine_grained: bool = True,
             object_only: bool = False,  # only use "[color] [shape]" as text
+            separater: str = ', ',
             overfit: int = -1,
             repeat: bool = False):
         super().__init__()
@@ -67,6 +68,11 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         self.num_videos = len(self.files)
         self.clip_len = clip_len
         self.is_video = is_video
+
+        if object_only:
+            # if object_only, we simply return all color-shape pairs for
+            # every timestamp, so we shouldn't concat them
+            assert fine_grained
         self.fine_grained = fine_grained
         self.object_only = object_only
 
@@ -82,6 +88,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
             3: 'to the left of',
             4: 'behind',
         }
+        self.separater = separater
 
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""
@@ -178,12 +185,21 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         object_shapes = [obj['shape'] for obj in anno['objects']]
         actions = anno['actions']
         if self.object_only:
-            text0_2 = text0_1 = f'{object_colors[0]} {object_shapes[0]}'
+            '''
+            text0_1 = text0_2 = f'{object_colors[0]} {object_shapes[0]}'
             text1 = f'{object_colors[1]} {object_shapes[1]}, ' \
                     f'{object_colors[0]} {object_shapes[0]}'
             text2 = f'{object_colors[2]} {object_shapes[2]}, ' \
                     f'{object_colors[actions[1] - 1]} ' \
                     f'{object_shapes[actions[1] - 1]}'
+            '''
+            # TODO: the comma here?
+            # TODO: the order here may serve as contrastive learning signal
+            # 'red cube, green cylinder, blue ball'
+            text0_1 = text0_2 = text1 = text2 = self.separater.join([
+                f'{color} {shape}'
+                for color, shape in zip(object_colors, object_shapes)
+            ])
         else:
             text0_1 = self.pattern0_1.format(
                 color=object_colors[0], shape=object_shapes[0])
@@ -202,8 +218,8 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
                 color2=object_colors[actions[1] - 1],
                 shape2=object_shapes[actions[1] - 1])
         if not self.fine_grained:
-            # just concat them with ','
-            text = f'{text0_1}, {text0_2}, {text1}, {text2}'
+            # just concat them with ', '
+            text = self.separater.join([text0_1, text0_2, text1, text2])
             return text
         if 0 <= frame_idx <= 3:
             text = text0_1
@@ -263,6 +279,7 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
             num_val_images: Optional[int] = None,
             fine_grained: bool = True,
             object_only: bool = False,
+            separater: str = ', ',
             overfit: int = -1,  # overfit to one training example
     ):
         super().__init__()
@@ -274,7 +291,9 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.num_train_images = num_train_images
         self.num_val_images = num_val_images
+        self.object_only = object_only
         self.fine_grained = fine_grained
+        self.separater = separater
         self.overfit = overfit
 
         train_split = 'val' if self.overfit > 0 else 'train'
@@ -285,7 +304,8 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
             split=train_split,
             max_n_objects=self.max_n_objects,
             fine_grained=self.fine_grained,
-            object_only=object_only,
+            object_only=self.object_only,
+            separater=self.separater,
             overfit=self.overfit,
             repeat=(self.overfit > 0),
         )
@@ -296,7 +316,8 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
             split='val',
             max_n_objects=self.max_n_objects,
             fine_grained=self.fine_grained,
-            object_only=object_only,
+            object_only=self.object_only,
+            separater=self.separater,
             overfit=self.overfit,
             repeat=False,
         )
