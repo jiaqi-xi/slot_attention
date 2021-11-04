@@ -163,7 +163,6 @@ class SlotAttentionModel(nn.Module):
         dec_kernel_size: int = 5,
         dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
         dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224
-        dec_pos_enc: bool = True,
         slot_mlp_size: int = 128,
         use_word_set: bool = False,
         use_padding_mask: bool = False,
@@ -180,7 +179,6 @@ class SlotAttentionModel(nn.Module):
         self.slot_size = slot_size
         self.dec_hidden_dims = dec_hidden_dims
         self.dec_resolution = dec_resolution
-        self.dec_pos_enc = dec_pos_enc
         self.slot_mlp_size = slot_mlp_size
         self.use_word_set = use_word_set
         self.use_padding_mask = use_padding_mask
@@ -200,7 +198,7 @@ class SlotAttentionModel(nn.Module):
 
         # we build an encoder as in original Slot Attention paper
         if not use_clip_vision:
-            self.enc_pos_enc = True
+            # self.enc_pos_enc = True
             self.enc_resolution = self.resolution
             self.enc_channels = self.out_features
             modules = []
@@ -282,8 +280,7 @@ class SlotAttentionModel(nn.Module):
             ))
 
         self.decoder = nn.Sequential(*modules)
-        if self.dec_pos_enc:
-            self.decoder_pos_embedding = SoftPositionEmbed(
+        self.decoder_pos_embedding = SoftPositionEmbed(
                 3, self.out_features, self.dec_resolution)
 
         self.slot_attention = SlotAttention(
@@ -356,9 +353,8 @@ class SlotAttentionModel(nn.Module):
         decoder_in = slots.repeat(1, 1, self.dec_resolution[0],
                                   self.dec_resolution[1])
 
-        if self.dec_pos_enc:
-            decoder_in = self.decoder_pos_embedding(decoder_in)
-        out = self.decoder(decoder_in)
+        out = self.decoder_pos_embedding(decoder_in)
+        out = self.decoder(out)
         # `out` has shape: [batch_size*num_slots, num_channels+1, height, width].
 
         out = out.view(batch_size, num_slots, num_channels + 1, height, width)

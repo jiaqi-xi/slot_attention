@@ -17,7 +17,6 @@ class SlotAttentionParams:
     dec_resolution: Tuple[int, int] = (7, 7)
     dec_kernel_size: int = 5
     dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
-    dec_pos_enc: bool = True
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0
@@ -32,7 +31,7 @@ class SlotAttentionParams:
 
     # Text2Slot model
     use_text2slot: bool = True
-    text2slot_arch: str = 'MLP'  # or 'Transformer'
+    text2slot_arch: str = 'MLP'  # or 'Transformer' or 'DETR'
     # for MLP
     text2slot_hidden_sizes: Tuple[int] = (256, )
     predict_slot_dist: bool = False

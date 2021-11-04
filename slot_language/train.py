@@ -10,6 +10,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
 from text_model import MLPText2Slot, TransformerText2Slot
+from detr_module import DETRText2Slot
 from data import CLEVRVisionLanguageCLIPDataModule
 from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from utils import VideoLogCallback, ImageLogCallback, simple_rescale
@@ -69,7 +70,11 @@ def main(params: Optional[SlotAttentionParams] = None):
             predict_dist=params.predict_slot_dist,
             use_bn=False)
     else:
-        text2slot_model = TransformerText2Slot(
+        if params.text2slot_arch == 'Transformer':
+            Text2Slot = TransformerText2Slot
+        else:
+            Text2Slot = DETRText2Slot
+        text2slot_model = Text2Slot(
             params.clip_text_channel,
             params.num_slots,
             params.slot_size,
@@ -97,7 +102,6 @@ def main(params: Optional[SlotAttentionParams] = None):
         dec_kernel_size=params.dec_kernel_size,
         dec_hidden_dims=params.dec_channels,
         dec_resolution=params.dec_resolution,
-        dec_pos_enc=params.dec_pos_enc,
         slot_mlp_size=params.slot_mlp_size,
         use_word_set=params.use_text2slot
         and params.text2slot_arch == 'Transformer',

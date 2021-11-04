@@ -79,7 +79,6 @@ def main(params=None):
         dec_kernel_size=params.dec_kernel_size,
         dec_hidden_dims=params.dec_channels,
         dec_resolution=params.dec_resolution,
-        dec_pos_enc=params.dec_pos_enc,
         slot_mlp_size=params.slot_mlp_size,
         use_word_set=params.use_text2slot
         and params.text2slot_arch == 'Transformer',
