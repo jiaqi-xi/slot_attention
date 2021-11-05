@@ -13,10 +13,10 @@ sys.path.append('../')
 
 from train import build_data_transforms, build_slot_attention_model
 from utils import VideoLogCallback, ImageLogCallback
-from .contrastive_data import CLEVRVisionLanguageCLIPDataModule
-from .contrastive_model import MoCoSlotAttentionModel
-from .contrastive_method import MoCoSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from .contrastive_params import SlotAttentionParams
+from contrastive_data import MoCoCLEVRVisionLanguageCLIPDataModule
+from contrastive_model import MoCoSlotAttentionModel
+from contrastive_method import MoCoSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from contrastive_params import SlotAttentionParams
 
 
 def build_moco_slot_attention_model(params: SlotAttentionParams):
@@ -55,7 +55,7 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     model = build_moco_slot_attention_model(params)
 
-    clevr_datamodule = CLEVRVisionLanguageCLIPDataModule(
+    clevr_datamodule = MoCoCLEVRVisionLanguageCLIPDataModule(
         data_root=params.data_root,
         train_batch_size=params.batch_size,
         val_batch_size=params.val_batch_size,

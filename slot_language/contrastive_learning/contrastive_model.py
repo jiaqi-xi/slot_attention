@@ -52,14 +52,13 @@ class MoCoSlotAttentionModel(nn.Module):
 
         Args:
             x (dict): Input data dict the the following keys:
-                - img: [B, 2, C, H, W], each batch is same video's two frames
-                - text: [B, 2, L], two frames in each batch share the same text
+                - img: [B, C, H, W], image as q
+                - text: [B, L], text corresponding to img
+                - img2: [B, C, H, W], img as k
+                - text2: [B, L], text corresponding to img2
         """
-        img, text = data['img'], data['text']
-        img_q, img_k = img[:, 0], img[:, 1]
-        text_q, text_k = text[:, 0], text[:, 1]
+        img_q, text_q = data['img'], data['text']
         x_q = dict(img=img_q, text=text_q)
-        x_k = dict(img=img_k, text=text_k)
         recon_combined, recons, masks, slots_q = self.model_q(x_q)
 
         # if in testing, directly return the output of SlotAttentionModel
@@ -72,8 +71,10 @@ class MoCoSlotAttentionModel(nn.Module):
         q = F.normalize(slots_q, dim=-1).view(-1, self.dim)
 
         # compute key features
+        img_k, text_k = data['img2'], data['text2']
+        x_k = dict(img=img_k, text=text_k)
         with torch.no_grad():  # no gradient to keys
-            self._momentum_update_key_encoder()  # update the key encoder
+            self._momentum_update_model_k()  # update the key encoder
 
             # shuffle for making use of BN
             # TODO: no shuffling since we're not in DDP training
@@ -85,7 +86,7 @@ class MoCoSlotAttentionModel(nn.Module):
             # undo shuffle
             # k = self._batch_unshuffle_ddp(k, idx_unshuffle)
 
-        logits, labels = self._moco_infonce(q, k)
+        logits, labels = self._run_moco(q, k)
 
         return recon_combined, recons, masks, slots_q, logits, labels
 
@@ -93,14 +94,13 @@ class MoCoSlotAttentionModel(nn.Module):
         """Calculate reconstruction loss and contrastive loss."""
         if not self.training:
             recon_combined, _, masks, _ = self.forward(input)
-            recon_loss = F.mse_loss(recon_combined, input['img'][:, 0])
+            recon_loss = F.mse_loss(recon_combined, input['img'])
             loss_dict = {
                 'recon_loss': recon_loss,
             }
         else:
             recon_combined, _, masks, _, logits, labels = self.forward(input)
-            recon_loss = F.mse_loss(recon_combined, input['img'][:,
-                                                                 0])  # img_q
+            recon_loss = F.mse_loss(recon_combined, input['img'])  # img_q
             contrastive_loss = F.cross_entropy(logits, labels)
             loss_dict = {
                 'recon_loss': recon_loss,
@@ -114,7 +114,7 @@ class MoCoSlotAttentionModel(nn.Module):
             loss_dict['entropy'] = entropy_loss
         return loss_dict
 
-    def _moco_infonce(self, q, k):
+    def _run_moco(self, q, k):
         # compute logits
         # Einstein sum is more intuitive
         # positive logits: [N, 1]

@@ -47,12 +47,6 @@ class SlotAttentionParams:
     text2slot_padding_mask: bool = True
     text2slot_mlp_layers: int = 2
 
-    # contrastive learning
-    moco_query_size: int = 4096
-    moco_momentum: float = 0.999
-    moco_temperature: float = 0.07
-    contrastive_loss_w: float = 1.0
-
     # data
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     # Normalization for natural img or original slot attention one
@@ -60,7 +54,7 @@ class SlotAttentionParams:
     # whether load different text for different video period
     fine_grained: bool = True
     # whether text is complete action or just object names
-    object_only: bool = False
+    object_only: bool = True  # TODO: by default, we are using every object
     # separater to connect different words
     separater: str = ', '
     overfit: int = -1  # overfit to `overfit` data samples
@@ -82,3 +76,9 @@ class SlotAttentionParams:
     n_samples: int = 5
     warmup_steps_pct: float = 0.02
     decay_steps_pct: float = 0.2
+
+    # contrastive learning
+    moco_query_size: int = batch_size * num_slots * 20  # ~9k
+    moco_momentum: float = 0.999
+    moco_temperature: float = 0.07
+    contrastive_loss_w: float = 1.0

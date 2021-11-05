@@ -2,20 +2,7 @@ import sys
 
 sys.path.append('../')
 
-import json
-import os
-import cv2
-import clip
-from PIL import Image
-from typing import Callable
-from typing import List
-from typing import Optional
 import numpy as np
-
-import pytorch_lightning as pl
-import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
 
 from data import CLEVRVisionLanguageCLIPDataset, CLEVRVisionLanguageCLIPDataModule
 
@@ -43,9 +30,8 @@ class MoCoCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         data2 = super().__getitem__(paired_index)
         assert (data1['text'] == data2['text']).all()
 
-        return dict(
-            img=torch.stack([data1['img'], data2['img']], dim=0),
-            text=torch.stack([data1['text'], data2['text']], dim=0))
+        data1.update(img2=data2['img'], text2=data2['text'])
+        return data1
 
 
 class MoCoCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
