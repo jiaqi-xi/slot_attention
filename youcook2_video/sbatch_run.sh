@@ -12,7 +12,7 @@
 
 # read args from command line
 GPUS=${GPUS:-1}
-CPUS_PER_TASK=${CPUS_PER_TASK:-5}
+MEM_PER_CPU=${MEM_PER_CPU:-8}
 PY_ARGS=${@:5}
 PARTITION=$1
 JOB_NAME=$2
@@ -37,7 +37,7 @@ echo "#!/bin/bash
 #SBATCH --cpus-per-task=$CPUS_PER_TASK               # self-explanatory, set to your preference
 #SBATCH --ntasks=$GPUS
 #SBATCH --ntasks-per-node=$GPUS
-#SBATCH --mem-per-cpu=6G                             # self-explanatory, set to your preference
+#SBATCH --mem-per-cpu=${MEM_PER_CPU}G                # self-explanatory, set to your preference
 #SBATCH --gres=gpu:$GPUS                             # NOTE: you need a GPU for CUDA support; self-explanatory, set to your preference 
 #SBATCH --nodes=1
 #SBATCH --qos=normal                                 # for 'high' and 'deadline' QoS, refer to https://support.vectorinstitute.ai/AboutVaughan2
