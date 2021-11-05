@@ -8,6 +8,7 @@ from torchvision import utils as vutils
 
 import clip
 from text_model import MLPText2Slot, TransformerText2Slot
+from detr_module import DETRText2Slot
 from data import CLEVRVisionLanguageCLIPDataModule
 from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from model import SlotAttentionModel
@@ -51,7 +52,11 @@ def main(params=None):
             predict_dist=params.predict_slot_dist,
             use_bn=False)
     else:
-        text2slot_model = TransformerText2Slot(
+        if params.text2slot_arch == 'Transformer':
+            Text2Slot = TransformerText2Slot
+        else:
+            Text2Slot = DETRText2Slot
+        text2slot_model = Text2Slot(
             params.clip_text_channel,
             params.num_slots,
             params.slot_size,
@@ -81,9 +86,9 @@ def main(params=None):
         dec_resolution=params.dec_resolution,
         slot_mlp_size=params.slot_mlp_size,
         use_word_set=params.use_text2slot
-        and params.text2slot_arch == 'Transformer',
+        and params.text2slot_arch in ['Transformer', 'DETR'],
         use_padding_mask=params.use_text2slot
-        and params.text2slot_arch == 'Transformer'
+        and params.text2slot_arch in ['Transformer', 'DETR']
         and params.text2slot_padding_mask,
     )
 

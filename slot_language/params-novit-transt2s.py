@@ -34,7 +34,7 @@ class SlotAttentionParams:
     use_text2slot: bool = True
     text2slot_arch: str = 'Transformer'
     # for MLP
-    text2slot_hidden_sizes: Tuple[int] = (256, )
+    text2slot_hidden_sizes: Tuple[int] = (512, )
     predict_slot_dist: bool = False  # directly predict for each slot
     # for Transformer
     text2slot_hidden: int = 64

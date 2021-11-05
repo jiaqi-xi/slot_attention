@@ -103,8 +103,8 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
             if not self.fine_grained:
                 raw_text = raw_text[0]
             else:
-                raw_text = f'{raw_text[0]}, {raw_text[4]}, ' \
-                           f'{raw_text[8]}, {raw_text[21]}'
+                raw_text = self.separater.join(
+                    [raw_text[0], raw_text[4], raw_text[8], raw_text[21]])
             return dict(video=video, text=text, raw_text=raw_text)
 
         img = self._get_frame(index)  # clip pre-processed img tensor

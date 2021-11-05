@@ -131,7 +131,7 @@ class TransformerDecoder(nn.Module):
         if self.norm is not None:
             output = self.norm(output)
 
-        return output.unsqueeze(0)
+        return output
 
 
 class TransformerDecoderLayer(nn.Module):

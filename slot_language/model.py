@@ -280,8 +280,8 @@ class SlotAttentionModel(nn.Module):
             ))
 
         self.decoder = nn.Sequential(*modules)
-        self.decoder_pos_embedding = SoftPositionEmbed(
-                3, self.out_features, self.dec_resolution)
+        self.decoder_pos_embedding = SoftPositionEmbed(3, self.out_features,
+                                                       self.dec_resolution)
 
         self.slot_attention = SlotAttention(
             in_features=self.out_features,
@@ -335,8 +335,15 @@ class SlotAttentionModel(nn.Module):
     def forward(self, x):
         torch.cuda.empty_cache()
 
+        slots = self.encode(x)
+
+        recon_combined, recons, masks, slots = self.decode(
+            slots, x['img'].shape)
+        return recon_combined, recons, masks, slots
+
+    def encode(self, x):
+        """Encode from img to slots."""
         img, text = x['img'], x['text']
-        batch_size, num_channels, height, width = img.shape
         encoder_out = self._get_encoder_out(img)  # transformed vision feature
         # `encoder_out` has shape: [batch_size, height*width, filter_size]
 
@@ -345,13 +352,18 @@ class SlotAttentionModel(nn.Module):
 
         # (batch_size, self.num_slots, self.slot_size)
         slots = self.slot_attention(encoder_out, slot_mu, slot_log_sigma)
+        return slots
+
+    def decode(self, slots, img_shape):
+        """Decode from slots to reconstructed images and masks."""
         # `slots` has shape: [batch_size, num_slots, slot_size].
         batch_size, num_slots, slot_size = slots.shape
+        batch_size, num_channels, height, width = img_shape
 
         # spatial broadcast
-        slots = slots.view(batch_size * num_slots, slot_size, 1, 1)
-        decoder_in = slots.repeat(1, 1, self.dec_resolution[0],
-                                  self.dec_resolution[1])
+        decoder_in = slots.view(batch_size * num_slots, slot_size, 1, 1)
+        decoder_in = decoder_in.repeat(1, 1, self.dec_resolution[0],
+                                       self.dec_resolution[1])
 
         out = self.decoder_pos_embedding(decoder_in)
         out = self.decoder(out)

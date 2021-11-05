@@ -132,7 +132,7 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
-            self.model.parameters(),
+            filter(lambda p: p.requires_grad, self.model.parameters()),
             lr=self.params.lr,
             weight_decay=self.params.weight_decay)
 
