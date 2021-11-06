@@ -1,83 +1,30 @@
 import os
+import sys
 import importlib
 import argparse
 import numpy as np
 from typing import Optional
 
-import torch
 import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
-from text_model import MLPText2Slot, TransformerText2Slot
-from detr_module import DETRText2Slot
-from data import CLEVRVisionLanguageCLIPDataModule
-from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from utils import VideoLogCallback, ImageLogCallback, simple_rescale
-from model import SlotAttentionModel
+from model import UNetSlotAttentionModel
 from params import SlotAttentionParams
 
+sys.path.append('../')
 
-def build_data_transforms(params: SlotAttentionParams):
-    _, clip_transforms = clip.load(params.clip_arch)
-    if not params.use_clip_vision:
-        from torchvision.transforms import Compose, Resize, ToTensor, \
-            Normalize, Lambda
-        from torchvision.transforms import InterpolationMode
-        BICUBIC = InterpolationMode.BICUBIC
-
-        def _convert_image_to_rgb(image):
-            return image.convert("RGB")
-
-        normalize = Lambda(
-            simple_rescale) if params.simple_normalize else Normalize(
-                (0.48145466, 0.4578275, 0.40821073),
-                (0.26862954, 0.26130258, 0.27577711))
-        clip_transforms = Compose([
-            Resize(params.resolution, interpolation=BICUBIC),
-            _convert_image_to_rgb,
-            ToTensor(),
-            normalize,
-        ])
-    return clip_transforms
-
-
-def build_text2slot_model(params: SlotAttentionParams):
-    if not params.use_text2slot:
-        text2slot_model = None
-    elif params.text2slot_arch == 'MLP':
-        text2slot_model = MLPText2Slot(
-            params.clip_text_channel,
-            params.num_slots,
-            params.slot_size,
-            params.text2slot_hidden_sizes,
-            predict_dist=params.predict_slot_dist,
-            use_bn=False)
-    else:
-        if params.text2slot_arch == 'Transformer':
-            Text2Slot = TransformerText2Slot
-        else:
-            Text2Slot = DETRText2Slot
-        text2slot_model = Text2Slot(
-            params.clip_text_channel,
-            params.num_slots,
-            params.slot_size,
-            d_model=params.text2slot_hidden,
-            nhead=params.text2slot_nhead,
-            num_layers=params.text2slot_num_transformers,
-            dim_feedforward=params.text2slot_dim_feedforward,
-            dropout=params.text2slot_dropout,
-            activation=params.text2slot_activation,
-            text_pe=params.text2slot_text_pe,
-            out_mlp_layers=params.text2slot_mlp_layers)
-    return text2slot_model
+from train import build_text2slot_model, build_data_transforms, process_ckp
+from utils import VideoLogCallback, ImageLogCallback
+from data import CLEVRVisionLanguageCLIPDataModule
+from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
 
 
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
-    model = SlotAttentionModel(
+    model = UNetSlotAttentionModel(
         clip_model=clip_model,
         use_clip_vision=params.use_clip_vision,
         use_clip_text=params.use_text2slot,
@@ -85,14 +32,16 @@ def build_slot_attention_model(params: SlotAttentionParams):
         resolution=params.resolution,
         num_slots=params.num_slots,
         num_iterations=params.num_iterations,
-        enc_resolution=params.enc_resolution,
-        enc_channels=params.clip_vision_channel,
-        enc_pos_enc=params.enc_pos_enc,
         slot_size=params.slot_size,
-        dec_kernel_size=params.dec_kernel_size,
-        dec_hidden_dims=params.dec_channels,
-        dec_resolution=params.dec_resolution,
         slot_mlp_size=params.slot_mlp_size,
+        kernel_size=params.kernel_size,
+        hidden_dims=params.channels,
+        enc_pos_enc=params.enc_pos_enc,
+        dec_resolution=params.dec_resolution,
+        use_double_conv=params.use_double_conv,
+        use_maxpool=params.use_maxpool,
+        use_bilinear=params.use_bilinear,
+        use_bn=params.use_bn,
         use_word_set=params.use_text2slot
         and params.text2slot_arch in ['Transformer', 'DETR'],
         use_padding_mask=params.use_text2slot
@@ -101,31 +50,6 @@ def build_slot_attention_model(params: SlotAttentionParams):
         use_entropy_loss=params.use_entropy_loss,
     )
     return model
-
-
-def process_ckp(ckp_path):
-    """Hack that enables checkpointing from mid-epoch."""
-    if not ckp_path:
-        return
-    ckp = torch.load(ckp_path, map_location='cpu')
-    for key in ckp['loops']['fit_loop'][
-            'epoch_loop.val_loop.dataloader_progress']['current'].keys():
-        ckp['loops']['fit_loop']['epoch_loop.val_loop.dataloader_progress'][
-            'total'][key] += ckp['loops']['fit_loop'][
-                'epoch_loop.val_loop.dataloader_progress']['current'][key]
-        ckp['loops']['fit_loop']['epoch_loop.val_loop.dataloader_progress'][
-            'current'][key] = 0
-    for key in ckp['loops']['fit_loop'][
-            'epoch_loop.val_loop.epoch_loop.batch_progress']['current'].keys():
-        ckp['loops']['fit_loop'][
-            'epoch_loop.val_loop.epoch_loop.batch_progress']['total'][
-                key] += ckp['loops']['fit_loop'][
-                    'epoch_loop.val_loop.epoch_loop.batch_progress'][
-                        'current'][key]
-        ckp['loops']['fit_loop'][
-            'epoch_loop.val_loop.epoch_loop.batch_progress']['current'][
-                key] = 0
-    torch.save(ckp, ckp_path)
 
 
 def main(params: Optional[SlotAttentionParams] = None):
