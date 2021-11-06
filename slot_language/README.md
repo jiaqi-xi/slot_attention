@@ -27,3 +27,8 @@ Things that can be tuned now:
 -   Text2Slot module:
     -   `text2slot_hidden_sizes`: default is 2layer MLP with 256 as hidden size, maybe one FC is enough, **we should try**
     -   `predict_slot_dist`: by default we predict `mu` and `sigma`, maybe we can just predict one `mu` per slot
+
+About auto checkpointing in mid-epoch
+
+-   I need to go to [here](https://github.com/PyTorchLightning/pytorch-lightning/blob/45f6a3b1758f88af7fd776915539800cbc0137a9/pytorch_lightning/trainer/connectors/checkpoint_connector.py#L137), then I'll be able to restore training loops.
+-   To save also the training state, I need to go to [here](https://github.com/PyTorchLightning/pytorch-lightning/blob/45f6a3b1758f88af7fd776915539800cbc0137a9/pytorch_lightning/trainer/connectors/checkpoint_connector.py#L471) **This can be done by setting val_check_interval!!!**

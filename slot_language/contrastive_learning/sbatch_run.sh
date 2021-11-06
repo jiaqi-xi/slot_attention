@@ -57,7 +57,7 @@ gcc --version >> $LOG_FILE                           # log GCC version
 nvcc --version >> $LOG_FILE                          # log NVCC version
 
 # run python file
-python $PY_FILE $PY_ARGS >> $LOG_FILE                # the script above, with its standard output appended log file
+PL_FAULT_TOLERANT_TRAINING=1 python $PY_FILE $PY_ARGS >> $LOG_FILE                # the script above, with its standard output appended log file
 
 " >> ./run-${JOB_NAME}.slrm
 
@@ -66,5 +66,5 @@ python $PY_FILE $PY_ARGS >> $LOG_FILE                # the script above, with it
 sbatch run-${JOB_NAME}.slrm
 
 # delete it
-# sleep 10
-# rm -f run-${JOB_NAME}.slrm
+sleep 3
+rm -f run-${JOB_NAME}.slrm

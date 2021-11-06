@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 from typing import Optional
 
+import torch
 import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -97,6 +98,26 @@ def build_slot_attention_model(params: SlotAttentionParams):
     return model
 
 
+def process_ckp(ckp_path):
+    """Hack that enables checkpointing from mid-epoch."""
+    if not ckp_path:
+        return
+    ckp = torch.load(ckp_path, map_location='cpu')
+    ckp['loops']['fit_loop']['epoch_loop.val_loop.dataloader_progress'][
+        'current'] = {
+            'ready': 0,
+            'completed': 0
+        }
+    ckp['loops']['fit_loop']['epoch_loop.val_loop.epoch_loop.batch_progress'][
+        'current'] = {
+            'ready': 0,
+            'completed': 0,
+            'started': 0,
+            'processed': 0
+        }
+    torch.save(ckp, ckp_path)
+
+
 def main(params: Optional[SlotAttentionParams] = None):
     if params is None:
         params = SlotAttentionParams()
@@ -152,13 +173,14 @@ def main(params: Optional[SlotAttentionParams] = None):
         name=logger_name,
         id=logger_name)  # we assume only run one exp per one params setting
 
-    # saves a file like: 'path/to/ckp/CLEVRVideo001-val_loss=0.0032.ckpt'
+    # saves a file like: 'path/to/ckp/CLEVRVideo-001-100000-val=0.0032.ckpt'
     ckp_path = "./checkpoint/" \
         f"{args.params + '-fp16' if args.fp16 else args.params}/{SLURM_JOB_ID}"
+    ckp_name = "CLEVRVideo-{epoch:03d}-{step:06d}-val_{val_recon_loss:.4f}"
     checkpoint_callback = ModelCheckpoint(
         monitor="val_recon_loss",
         dirpath=ckp_path,
-        filename="CLEVRVideo{epoch:03d}-val_loss_{val_recon_loss:.4f}",
+        filename=ckp_name,
         save_top_k=2,
         mode="min",
     )
@@ -168,16 +190,18 @@ def main(params: Optional[SlotAttentionParams] = None):
     if os.path.exists(ckp_path):
         ckp_files = os.listdir(ckp_path)
         ckp_files = [ckp for ckp in ckp_files if ckp.startswith('CLEVRVideo')]
-        epoch_num = [int(ckp[16:19]) for ckp in ckp_files]
-        last_ckp = ckp_files[np.argmax(epoch_num)]
+        step_num = [int(ckp[26:32]) for ckp in ckp_files]
+        last_ckp = ckp_files[np.argmax(step_num)]
         print(f'INFO: automatically detect checkpoint {last_ckp}')
         args.weight = os.path.join(ckp_path, last_ckp)
 
+    process_ckp(args.weight)  # enable mid-epoch resuming
     trainer = Trainer(
         logger=logger if params.is_logger_enabled else False,
         # TODO: 'ddp' doesn't work on Vector cluster!
         accelerator="dp" if params.gpus > 1 else None,
-        num_sanity_val_steps=params.num_sanity_val_steps,
+        num_sanity_val_steps=params.num_sanity_val_steps
+        if not args.weight else 0,
         gpus=params.gpus,
         max_epochs=params.max_epochs,
         log_every_n_steps=50,
@@ -189,9 +213,12 @@ def main(params: Optional[SlotAttentionParams] = None):
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
         precision=16 if args.fp16 else 32,
-        resume_from_checkpoint=args.weight if args.weight else None,
+        weights_save_path=ckp_path,
     )
-    trainer.fit(method, datamodule=clevr_datamodule)
+    trainer.fit(
+        method,
+        datamodule=clevr_datamodule,
+        ckpt_path=args.weight if args.weight else None)
 
 
 if __name__ == "__main__":
