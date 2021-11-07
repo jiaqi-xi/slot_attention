@@ -14,9 +14,15 @@ class SlotAttentionParams:
     num_iterations: int = 3
     # MLP hidden size in Slot Attention
     slot_mlp_size: int = 128  # FFN after cross attention
-    dec_resolution: Tuple[int, int] = (resolution[0] // 8, resolution[1] // 8)
+    dec_resolution: Tuple[int, int] = (8, 8)
     kernel_size: int = 5
-    channels: Tuple[int, ...] = tuple(64 for _ in range(4))
+    enc_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
+    dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
+    # UNet settings
+    use_double_conv: bool = False
+    use_maxpool: bool = True
+    use_bilinear: bool = True
+    use_bn: bool = False
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0

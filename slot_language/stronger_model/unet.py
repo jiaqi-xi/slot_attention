@@ -144,12 +144,10 @@ class Up(nn.Module):
 class UNetEncoder(nn.Module):
 
     def __init__(self, in_channels, channels, kernel_size, use_double_conv,
-                 use_maxpool, use_bilinear, use_bn):
+                 use_maxpool, use_bn):
         super().__init__()
 
-        channels = copy.deepcopy(channels)
-        if use_bilinear:
-            channels[-1] //= 2
+        self.channels = list(copy.deepcopy(channels))
         in_conv = Conv(
             in_channels,
             channels[0],
@@ -173,22 +171,25 @@ class UNetEncoder(nn.Module):
 
 class UNetDecoder(nn.Module):
 
-    def __init__(self, channels, kernel_size, use_double_conv, use_bilinear,
-                 use_bn):
+    def __init__(self, enc_channels, channels, kernel_size, use_double_conv,
+                 use_bilinear, use_bn):
         super().__init__()
 
+        assert len(enc_channels) == len(channels) + 1
+        channels = list(copy.deepcopy(channels))
         # make it from small to large
         if channels[0] > channels[-1]:
-            channels = copy.deepcopy(channels)[::-1]
-        factor = 2 if use_bilinear else 1
-        up_convs = [
-            Up(channels[1], channels[0], kernel_size, use_double_conv,
-               use_bilinear, use_bn)
+            channels = channels[::-1]
+        in_channels = [
+            enc_channels[i] + channels[i + 1]
+            for i in range(len(channels) - 1)
         ]
-        for i in range(1, len(channels) - 1):
+        in_channels.append(enc_channels[-2] + enc_channels[-1])
+        up_convs = []
+        for i in range(len(channels)):
             up_convs.append(
-                Up(channels[i + 1], channels[i] // factor, kernel_size,
-                   use_double_conv, use_bilinear, use_bn))
+                Up(in_channels[i], channels[i], kernel_size, use_double_conv,
+                   use_bilinear, use_bn))
         self.up_convs = nn.ModuleList(up_convs)
 
     def forward(self, encoder_out):
@@ -197,3 +198,31 @@ class UNetDecoder(nn.Module):
         for i in range(len(self.up_convs) - 2, -1, -1):
             x = self.up_convs[i](x, encoder_out[i])
         return x
+
+
+class UNet(nn.Module):
+
+    def __init__(self, in_channels, channels, kernel_size, use_double_conv,
+                 use_maxpool, use_bilinear, use_bn):
+        super().__init__()
+
+        self.encoder = UNetEncoder(
+            in_channels,
+            channels,
+            kernel_size,
+            use_double_conv=use_double_conv,
+            use_maxpool=use_maxpool,
+            use_bn=use_bn)
+
+        self.decoder = UNetDecoder(
+            self.encoder.channels,
+            channels[:-1],
+            kernel_size,
+            use_double_conv=use_double_conv,
+            use_bilinear=use_bilinear,
+            use_bn=use_bn)
+
+    def forward(self, x):
+        feats = self.encoder(x)
+        out = self.decoder(feats)
+        return out

@@ -10,8 +10,8 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
-from model import UNetSlotAttentionModel
-from params import SlotAttentionParams
+from unet_model import UNetSlotAttentionModel
+from unet_params import SlotAttentionParams
 
 sys.path.append('../')
 
@@ -35,7 +35,8 @@ def build_slot_attention_model(params: SlotAttentionParams):
         slot_size=params.slot_size,
         slot_mlp_size=params.slot_mlp_size,
         kernel_size=params.kernel_size,
-        hidden_dims=params.channels,
+        enc_channels=params.enc_channels,
+        dec_channels=params.dec_channels,
         enc_pos_enc=params.enc_pos_enc,
         dec_resolution=params.dec_resolution,
         use_double_conv=params.use_double_conv,
