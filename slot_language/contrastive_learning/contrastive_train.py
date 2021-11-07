@@ -30,7 +30,8 @@ def build_moco_slot_attention_model(params: SlotAttentionParams):
         K=params.moco_query_size,
         m=params.moco_momentum,
         T=params.moco_temperature,
-        mlp=params.moco_mlp)
+        mlp=params.moco_mlp,
+        diff_video=params.diff_video if hasattr(params, 'diff_video') else False)
     return model
 
 

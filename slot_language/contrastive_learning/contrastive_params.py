@@ -82,4 +82,5 @@ class SlotAttentionParams:
     moco_momentum: float = 0.999
     moco_temperature: float = 0.07
     contrastive_loss_w: float = 1.0
-    moco_mlp: Optional[int] = None
+    moco_mlp: Optional[int] = None  # whether use proj head from slot to feats
+    diff_video: bool = False  # whether to differentiate between videos

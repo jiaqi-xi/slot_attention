@@ -163,7 +163,7 @@ class UNetSlotAttentionModel(SlotAttentionModel):
                         use_double_conv=self.use_double_conv,
                         use_bilinear=self.use_bilinear,
                         use_bn=self.use_bn))
-                out_size = out_size * 2 if self.bilinear else \
+                out_size = out_size * 2 if self.use_bilinear else \
                     conv_transpose_out_shape(
                         out_size, 2, kernel_size // 2, kernel_size, 1)
         assert_shape(

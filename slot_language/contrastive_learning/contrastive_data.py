@@ -20,10 +20,10 @@ class MoCoCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         if self.is_video:
             return super().__getitem__(index)
 
-        img_idx, frame_idx = index // self.clip_len, index % self.clip_len
+        video_idx, frame_idx = index // self.clip_len, index % self.clip_len
         paired_frame_idx = (np.random.choice(self.clip_len - 1) +
                             (frame_idx + 1)) % self.clip_len
-        paired_index = img_idx * self.clip_len + paired_frame_idx
+        paired_index = video_idx * self.clip_len + paired_frame_idx
         assert paired_frame_idx != frame_idx
 
         data1 = super().__getitem__(index)
@@ -31,6 +31,7 @@ class MoCoCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         assert (data1['text'] == data2['text']).all()
 
         data1.update(img2=data2['img'], text2=data2['text'])
+        data1['video_idx'] = video_idx
         return data1
 
 
