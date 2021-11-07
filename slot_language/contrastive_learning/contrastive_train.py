@@ -9,14 +9,15 @@ import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-sys.path.append('../')
-
-from train import build_data_transforms, build_slot_attention_model, process_ckp
-from utils import VideoLogCallback, ImageLogCallback
 from contrastive_data import MoCoCLEVRVisionLanguageCLIPDataModule
 from contrastive_model import MoCoSlotAttentionModel
 from contrastive_method import MoCoSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from contrastive_params import SlotAttentionParams
+
+sys.path.append('../')
+
+from train import build_data_transforms, build_slot_attention_model, process_ckp
+from utils import VideoLogCallback, ImageLogCallback
 
 
 def build_moco_slot_attention_model(params: SlotAttentionParams):
@@ -28,7 +29,8 @@ def build_moco_slot_attention_model(params: SlotAttentionParams):
         params.slot_size,
         K=params.moco_query_size,
         m=params.moco_momentum,
-        T=params.moco_temperature)
+        T=params.moco_temperature,
+        mlp=params.moco_mlp)
     return model
 
 

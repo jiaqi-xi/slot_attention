@@ -1,10 +1,10 @@
 import sys
 
-sys.path.append('../')
-
 import torch
 from torch import nn
 import torch.nn.functional as F
+
+sys.path.append('../')
 
 from model import SlotAttentionModel
 
@@ -17,6 +17,7 @@ class MoCoSlotAttentionModel(nn.Module):
         K: queue size, i.e. the number of negative keys
         m: moco momentum of updating key encoder
         T: softmax temperature
+        mlp: additional projection head from slot emb to contrastive features
     """
 
     def __init__(self,
@@ -25,13 +26,25 @@ class MoCoSlotAttentionModel(nn.Module):
                  dim: int = 64,
                  K: int = 4096,
                  m: float = 0.999,
-                 T: float = 0.07):
+                 T: float = 0.07,
+                 mlp=None):
         super().__init__()
 
         self.dim = dim
         self.K = K
         self.m = m
         self.T = T
+
+        # TODO: projection head
+        self.mlp = (mlp is not None)
+        if self.mlp:
+            assert isinstance(mlp, (list, tuple))
+            assert mlp[-1] == self.dim
+            model_q.proj_head = build_mlps(
+                model_q.slot_size, mlp[:-1], mlp[-1], use_bn=False)
+            model_k.proj_head = build_mlps(
+                model_k.slot_size, mlp[:-1], mlp[-1], use_bn=False)
+            print('Using MLP projection head in contrastive learning!')
 
         self.model_q = model_q
         self.model_k = model_k.eval()
@@ -68,7 +81,10 @@ class MoCoSlotAttentionModel(nn.Module):
         # compute query features
         # TODO: query features from Slot embeddings?
         # slots_q of shape [B, num_slots, dim] --> q of shape [N, dim]
-        q = F.normalize(slots_q, dim=-1).view(-1, self.dim)
+        q = slots_q.view(-1, self.dim)
+        if self.mlp:
+            q = self.model_q.proj_head(q)
+        q = F.normalize(q, dim=1)  # [N, dim]
 
         # compute key features
         img_k, text_k = data['img2'], data['text2']
@@ -81,7 +97,10 @@ class MoCoSlotAttentionModel(nn.Module):
             # im_k, idx_unshuffle = self._batch_shuffle_ddp(im_k)
 
             slots_k = self.model_k.encode(x_k)  # keys: [B, num_slots, dim]
-            k = F.normalize(slots_k, dim=-1).view(-1, self.dim)  # [N, dim]
+            k = slots_k.view(-1, self.dim)
+            if self.mlp:
+                k = self.model_k.proj_head(k)
+            k = F.normalize(k, dim=1)  # [N, dim]
 
             # undo shuffle
             # k = self._batch_unshuffle_ddp(k, idx_unshuffle)
@@ -178,3 +197,27 @@ def concat_all_gather(tensor):
 
     output = torch.cat(tensors_gather, dim=0)
     return output
+
+
+def fc_bn_relu(in_dim, out_dim, use_bn):
+    if use_bn:
+        return nn.Sequential(
+            nn.Linear(in_dim, out_dim, bias=False),
+            nn.BatchNorm1d(out_dim),
+            nn.ReLU(),
+        )
+    return nn.Sequential(
+        nn.Linear(in_dim, out_dim, bias=True),
+        nn.ReLU(),
+    )
+
+
+def build_mlps(in_channels, hidden_sizes, out_channels, use_bn):
+    if hidden_sizes is None or len(hidden_sizes) == 0:
+        return nn.Linear(in_channels, out_channels)
+    modules = [fc_bn_relu(in_channels, hidden_sizes[0], use_bn=use_bn)]
+    for i in range(0, len(hidden_sizes) - 1):
+        modules.append(
+            fc_bn_relu(hidden_sizes[i], hidden_sizes[i + 1], use_bn=use_bn))
+    modules.append(nn.Linear(hidden_sizes[-1], out_channels))
+    return nn.Sequential(*modules)
