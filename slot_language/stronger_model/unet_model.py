@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from clip import CLIP
-from unet import UNet
+from unet import UNet, UpBlock
 
 sys.path.append('../')
 
@@ -35,6 +35,7 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
         enc_pos_enc: bool = False,  # because CLIP's vision encoder already has?
         dec_resolution: Tuple[int, int] = (8, 8),
+        spec_decoder: bool = False,  # Upsample+Conv or simple ConvTranspose
         use_double_conv: bool = False,
         use_maxpool: bool = True,
         use_bilinear: bool = True,
@@ -48,6 +49,10 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         self.enc_pos_enc = enc_pos_enc
         self.enc_resolution = resolution
         self.dec_resolution = dec_resolution
+        self.spec_decoder = spec_decoder
+        self.use_double_conv = use_double_conv
+        self.use_bilinear = use_bilinear
+        self.use_bn = use_bn
         self.use_word_set = use_word_set
         self.use_padding_mask = use_padding_mask
         self.out_features = slot_size
@@ -133,20 +138,34 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         in_size = self.dec_resolution[0]
         out_size = in_size
         for i in range(len(channels) - 1):
-            modules.append(
-                nn.Sequential(
-                    nn.ConvTranspose2d(
+            if not self.spec_decoder:
+                modules.append(
+                    nn.Sequential(
+                        nn.ConvTranspose2d(
+                            channels[i],
+                            channels[i + 1],
+                            kernel_size=kernel_size,
+                            stride=2,
+                            padding=kernel_size // 2,
+                            output_padding=1,
+                        ),
+                        nn.ReLU(),
+                    ))
+                out_size = conv_transpose_out_shape(out_size, 2,
+                                                    kernel_size // 2,
+                                                    kernel_size, 1)
+            else:
+                modules.append(
+                    UpBlock(
                         channels[i],
                         channels[i + 1],
                         kernel_size=kernel_size,
-                        stride=2,
-                        padding=kernel_size // 2,
-                        output_padding=1,
-                    ),
-                    nn.ReLU(),
-                ))
-            out_size = conv_transpose_out_shape(out_size, 2, kernel_size // 2,
-                                                kernel_size, 1)
+                        use_double_conv=self.use_double_conv,
+                        use_bilinear=self.use_bilinear,
+                        use_bn=self.use_bn))
+                out_size = out_size * 2 if self.bilinear else \
+                    conv_transpose_out_shape(
+                        out_size, 2, kernel_size // 2, kernel_size, 1)
         assert_shape(
             self.resolution,
             (out_size, out_size),

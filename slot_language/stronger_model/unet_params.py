@@ -18,6 +18,7 @@ class SlotAttentionParams:
     kernel_size: int = 5
     enc_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
     dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
+    spec_decoder: bool = False
     # UNet settings
     use_double_conv: bool = False
     use_maxpool: bool = True

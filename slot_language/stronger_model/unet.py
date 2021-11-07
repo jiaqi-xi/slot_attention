@@ -49,7 +49,7 @@ class DoubleConv(nn.Module):
             mid_channels = out_channels
         self.double_conv = nn.Sequential(
             SingleConv(in_channels, mid_channels, kernel_size, use_bn),
-            SingleConv(in_channels, mid_channels, kernel_size, use_bn),
+            SingleConv(mid_channels, out_channels, kernel_size, use_bn),
         )
         self.residual = residual
 
@@ -87,7 +87,7 @@ class Conv(nn.Module):
         return self.conv(x)
 
 
-class Down(nn.Module):
+class UNetDown(nn.Module):
     """Downscaling with Pool then Conv"""
 
     def __init__(self, in_channels, out_channels, kernel_size, use_double_conv,
@@ -112,7 +112,7 @@ class Down(nn.Module):
         return x
 
 
-class Up(nn.Module):
+class UNetUp(nn.Module):
     """Upscaling then Conv"""
 
     def __init__(self, in_channels, out_channels, kernel_size, use_double_conv,
@@ -157,8 +157,8 @@ class UNetEncoder(nn.Module):
         down_convs = [in_conv]
         for i in range(len(channels) - 1):
             down_convs.append(
-                Down(channels[i], channels[i + 1], kernel_size,
-                     use_double_conv, use_maxpool, use_bn))
+                UNetDown(channels[i], channels[i + 1], kernel_size,
+                         use_double_conv, use_maxpool, use_bn))
         self.down_convs = nn.ModuleList(down_convs)
 
     def forward(self, x):
@@ -188,8 +188,8 @@ class UNetDecoder(nn.Module):
         up_convs = []
         for i in range(len(channels)):
             up_convs.append(
-                Up(in_channels[i], channels[i], kernel_size, use_double_conv,
-                   use_bilinear, use_bn))
+                UNetUp(in_channels[i], channels[i], kernel_size,
+                       use_double_conv, use_bilinear, use_bn))
         self.up_convs = nn.ModuleList(up_convs)
 
     def forward(self, encoder_out):
@@ -226,3 +226,29 @@ class UNet(nn.Module):
         feats = self.encoder(x)
         out = self.decoder(feats)
         return out
+
+
+class UpBlock(nn.Module):
+
+    def __init__(self, in_channels, out_channels, kernel_size, use_double_conv,
+                 use_bilinear, use_bn):
+        super().__init__()
+
+        self.upsample = nn.Upsample(
+            scale_factor=2, mode='bilinear',
+            align_corners=True) if use_bilinear else nn.ConvTranspose2d(
+                in_channels,
+                in_channels,
+                kernel_size=kernel_size,
+                stride=2,
+                padding=kernel_size // 2,
+                output_padding=1)
+
+        mid_channels = None
+        self.conv = Conv(in_channels, out_channels, use_double_conv,
+                         mid_channels, kernel_size, use_bn)
+
+    def forward(self, x):
+        x = self.upsample(x)
+        x = self.conv(x)
+        return x
