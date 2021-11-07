@@ -10,9 +10,9 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 from contrastive_data import PairCLEVRVisionLanguageCLIPDataModule
-from contrastive_model import MoCoSlotAttentionModel
-from contrastive_method import MoCoSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from contrastive_params import SlotAttentionParams
+from metric_model import MetricSlotAttentionModel
+from metric_method import MetricSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from metric_params import SlotAttentionParams
 
 sys.path.append('../')
 
@@ -20,18 +20,13 @@ from train import build_data_transforms, build_slot_attention_model, process_ckp
 from utils import VideoLogCallback, ImageLogCallback
 
 
-def build_moco_slot_attention_model(params: SlotAttentionParams):
-    model_q = build_slot_attention_model(params)
-    model_k = build_slot_attention_model(params)
-    model = MoCoSlotAttentionModel(
-        model_q,
-        model_k,
+def build_Metric_slot_attention_model(params: SlotAttentionParams):
+    model = build_slot_attention_model(params)
+    model = MetricSlotAttentionModel(
+        model,
         params.slot_size,
-        K=params.moco_query_size,
-        m=params.moco_momentum,
-        T=params.moco_temperature,
-        mlp=params.moco_mlp,
-        diff_video=params.diff_video if hasattr(params, 'diff_video') else False)
+        T=params.metric_temperature,
+        mlp=params.metric_mlp)
     return model
 
 
@@ -56,7 +51,7 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     clip_transforms = build_data_transforms(params)
 
-    model = build_moco_slot_attention_model(params)
+    model = build_Metric_slot_attention_model(params)
 
     clevr_datamodule = PairCLEVRVisionLanguageCLIPDataModule(
         data_root=params.data_root,

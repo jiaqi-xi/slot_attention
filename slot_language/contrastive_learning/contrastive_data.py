@@ -7,7 +7,7 @@ import numpy as np
 from data import CLEVRVisionLanguageCLIPDataset, CLEVRVisionLanguageCLIPDataModule
 
 
-class MoCoCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
+class PairCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -35,13 +35,13 @@ class MoCoCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         return data1
 
 
-class MoCoCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
+class PairCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         train_split = 'val' if self.overfit > 0 else 'train'
-        self.train_dataset = MoCoCLEVRVisionLanguageCLIPDataset(
+        self.train_dataset = PairCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
             clip_transforms=self.clip_transforms,
@@ -53,7 +53,7 @@ class MoCoCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             overfit=self.overfit,
             repeat=(self.overfit > 0),
         )
-        self.val_dataset = MoCoCLEVRVisionLanguageCLIPDataset(
+        self.val_dataset = PairCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_val_images,
             clip_transforms=self.clip_transforms,

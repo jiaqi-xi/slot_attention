@@ -1,30 +1,31 @@
 import sys
 
-sys.path.append('../')
-
 import pytorch_lightning as pl
 import torch
 from torchvision import utils as vutils
 
+from metric_model import MetricSlotAttentionModel
+from metric_params import SlotAttentionParams
+
+sys.path.append('../')
+
 from utils import to_rgb_from_tensor
 from method import SlotAttentionVideoLanguageMethod
-from contrastive_model import MoCoSlotAttentionModel
-from contrastive_params import SlotAttentionParams
 
 
-class MoCoSlotAttentionVideoLanguageMethod(SlotAttentionVideoLanguageMethod):
+class MetricSlotAttentionVideoLanguageMethod(SlotAttentionVideoLanguageMethod):
 
-    def __init__(self, model: MoCoSlotAttentionModel,
+    def __init__(self, model: MetricSlotAttentionModel,
                  datamodule: pl.LightningDataModule,
                  params: SlotAttentionParams):
         super().__init__(model, datamodule, params)
         self.entropy_loss_w = params.entropy_loss_w
-        self.contrastive_loss_w = params.contrastive_loss_w
+        self.metric_loss_w = params.metric_loss_w
 
     def training_step(self, batch, batch_idx, optimizer_idx=0):
         train_loss = self.model.loss_function(batch)
         loss = train_loss['recon_loss'] + \
-            self.contrastive_loss_w * train_loss['contrastive_loss']
+            self.metric_loss_w * train_loss['metric_loss']
         if 'entropy' in train_loss.keys():
             loss = loss + train_loss['entropy'] * self.entropy_loss_w
         train_loss['loss'] = loss

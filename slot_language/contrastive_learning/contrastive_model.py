@@ -83,6 +83,7 @@ class MoCoSlotAttentionModel(nn.Module):
                 - text: [B, L], text corresponding to img
                 - img2: [B, C, H, W], img as k
                 - text2: [B, L], text corresponding to img2
+                - video_idx: [B]
         """
         img_q, text_q = data['img'], data['text']
         x_q = dict(img=img_q, text=text_q)
