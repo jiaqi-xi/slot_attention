@@ -169,7 +169,8 @@ class MoCoSlotAttentionModel(nn.Module):
             negatives = self._sample_negative(vid_ids)
             assert len(negatives.shape) == 3  # [dim, B, sample_num]
             negatives = negatives.unsqueeze(2).repeat(  # [dim, N, sample_num]
-                1, 1, self.num_slots, 1).flatten(start_dim=1, end_dim=2)
+                1, 1, self.num_slots, 1).flatten(
+                    start_dim=1, end_dim=2)
             l_neg = torch.einsum('nc,cnm->nm', [q, negatives])
 
         # logits: [N, (1+K)]
@@ -226,7 +227,8 @@ class MoCoSlotAttentionModel(nn.Module):
         # replace the keys at ptr (dequeue and enqueue)
         self.queue[:, ptr:ptr + batch_size] = keys.T
         if vid_ids is not None:
-            self.queue_vid_id[ptr:ptr + batch_size] = vid_ids
+            self.queue_vid_id[ptr:ptr + batch_size] = \
+                vid_ids.unsqueeze(1).repeat(1, self.num_slots).view(-1)
         ptr = (ptr + batch_size) % self.K  # move pointer
 
         self.queue_ptr[0] = ptr

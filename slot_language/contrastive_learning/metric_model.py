@@ -111,8 +111,7 @@ class MetricSlotAttentionModel(nn.Module):
         """Calculate reconstruction loss and contrastive loss."""
         if not self.training:
             recon_combined, _, masks, _ = self.forward(input)
-            img = torch.cat([input['img'], input['img2']], dim=0)
-            recon_loss = F.mse_loss(recon_combined, img)
+            recon_loss = F.mse_loss(recon_combined, input['img'])
             loss_dict = {
                 'recon_loss': recon_loss,
             }

@@ -43,7 +43,7 @@ class MetricSlotAttentionVideoLanguageMethod(SlotAttentionVideoLanguageMethod):
             'val_loss': avg_recon_loss,
             'val_recon_loss': avg_recon_loss,
         }
-        if self.model.model_q.use_entropy_loss:
+        if self.model.model.use_entropy_loss:
             avg_entropy = torch.stack([x['entropy'] for x in outputs]).mean()
             logs['val_entropy'] = avg_entropy
             logs['val_loss'] += avg_entropy * self.entropy_loss_w
@@ -58,6 +58,7 @@ class MetricSlotAttentionVideoLanguageMethod(SlotAttentionVideoLanguageMethod):
         if self.params.gpus > 0:
             batch = {k: v.to(self.device) for k, v in batch.items()}
         B, C, H, W = batch['img'].shape
+        # we want to compare the two imgs, so we cat as input
         batch = dict(
             img=torch.stack([batch['img'], batch['img2']],
                             dim=1).view(2 * B, C, H, W),
