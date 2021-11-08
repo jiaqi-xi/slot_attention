@@ -9,7 +9,7 @@ import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from contrastive_data import PairCLEVRVisionLanguageCLIPDataModule
+from pair_data import PairCLEVRVisionLanguageCLIPDataModule
 from contrastive_model import MoCoSlotAttentionModel
 from contrastive_method import MoCoSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from contrastive_params import SlotAttentionParams
@@ -31,7 +31,8 @@ def build_moco_slot_attention_model(params: SlotAttentionParams):
         m=params.moco_momentum,
         T=params.moco_temperature,
         mlp=params.moco_mlp,
-        diff_video=params.diff_video if hasattr(params, 'diff_video') else False)
+        diff_video=params.diff_video
+        if hasattr(params, 'diff_video') else False)
     return model
 
 

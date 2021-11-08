@@ -9,7 +9,7 @@ import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from contrastive_data import PairCLEVRVisionLanguageCLIPDataModule
+from pair_data import PairCLEVRVisionLanguageCLIPDataModule
 from metric_model import MetricSlotAttentionModel
 from metric_method import MetricSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from metric_params import SlotAttentionParams
