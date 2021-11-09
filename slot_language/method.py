@@ -31,6 +31,9 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
             loss = loss + train_loss['entropy'] * self.entropy_loss_w
         train_loss['loss'] = loss
         logs = {key: val.item() for key, val in train_loss.items()}
+        # record training time
+        logs['data_time'] = \
+            self.trainer.profiler.recorded_durations['get_train_batch'][-1]
         self.log_dict(logs, sync_dist=True)
         return {'loss': loss}
 

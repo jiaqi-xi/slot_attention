@@ -185,7 +185,7 @@ class ObjMLPText2Slot(nn.Module):
                  slot_size: int,
                  hidden_sizes: Tuple[int] = (256, ),
                  use_bn: bool = False):
-        super(MLPText2Slot, self).__init__()
+        super(ObjMLPText2Slot, self).__init__()
         self.slot_size = slot_size
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -219,5 +219,5 @@ class ObjMLPText2Slot(nn.Module):
         bs, num_slots = padding_mask.shape
         slots = torch.empty((bs, num_slots, self.slot_size)).type_as(obj_slots)
         slots[padding_mask] = obj_slots
-        slots[~padding_mask] = pad_slots
+        slots[~padding_mask] = pad_slots.type_as(obj_slots)
         return slots
