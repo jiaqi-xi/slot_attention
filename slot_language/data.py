@@ -115,13 +115,13 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
 
     def _get_frame(self, index: int):
         """Get one random frame from the video."""
-        img_idx, frame_idx = index // self.clip_len, index % self.clip_len
+        img_idx, frame_idx = self._get_idx(index)
         image_path = self.files[img_idx]
         cap = cv2.VideoCapture(image_path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         success, img = cap.read()
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         assert success, f'read video {image_path} frame {frame_idx} failed!'
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         cap.release()
         # return the CLIP pre-processed image
         return self.clip_transforms(Image.fromarray(img))
@@ -179,7 +179,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
                 - 'color': str, 'cyan', 'yellow', brown', etc.
                 - 'rotation': float, rotation angle (degree) along Z-up axis
         """
-        img_idx, frame_idx = index // self.clip_len, index % self.clip_len
+        img_idx, frame_idx = self._get_idx(index)
         anno = self.annos[img_idx]
         object_colors = [obj['color'] for obj in anno['objects']]
         object_shapes = [obj['shape'] for obj in anno['objects']]
@@ -260,6 +260,10 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
                 img_paths.append(image_path)
                 all_annos.append(anno)
         return img_paths, all_annos
+
+    def _get_idx(self, index):
+        # video_idx and frame_idx
+        return index // self.clip_len, index % self.clip_len
 
     def __len__(self):
         return len(self.files) * self.clip_len
@@ -393,7 +397,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
 
     def _generate_text(self, index: int):
         """Generate text descriptions of each object in the scene."""
-        img_idx = index // self.clip_len
+        img_idx = self._get_idx(index)[0]
         anno = self.annos[img_idx]
         colors = [obj['color'] for obj in anno['objects']]
         shapes = [obj['shape'] for obj in anno['objects']]
@@ -417,20 +421,13 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
                          clip_transforms, max_n_objects, num_workers)
-        self.data_root = data_root
-        self.train_batch_size = train_batch_size
-        self.val_batch_size = val_batch_size
-        self.clip_transforms = clip_transforms
-        self.num_workers = num_workers
-        self.max_n_objects = max_n_objects
 
-        train_split = 'val' if self.overfit > 0 else 'train'
         self.train_dataset = ObjCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
-            split=train_split,
+            split='train',
         )
         self.val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
@@ -438,4 +435,101 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='val',
+        )
+
+
+class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
+                                             ):
+    """Dataset that loads *consequent* frames (clips) from CLEVR video.
+    One text ('color-shape' of an object) directly for one slot!
+    """
+
+    def __init__(
+            self,
+            data_root: str,
+            max_num_images: Optional[int],
+            clip_transforms: Callable,
+            max_n_objects: int = 6,
+            split: str = "train",
+            clip_len: int = 34,
+            is_video: bool = False,
+            sample_clip_num: int = 2,  # loaded clips per video
+    ):
+        # TODO: we assume `self.max_n_objects` == 6 here!
+        super().__init__(data_root, max_num_images, clip_transforms,
+                         max_n_objects, split, clip_len, is_video)
+        self.sample_clip_num = sample_clip_num
+        if self.split == 'train':
+            self.base_num = self.clip_len - (self.sample_clip_num - 1)
+        else:
+            self.base_num = self.clip_len // self.sample_clip_num
+
+    def __getitem__(self, index: int):
+        """Load one video and get only one frame from it"""
+        if self.is_video:
+            return super().__getitem__(index)
+
+        clip = self._get_clip(index)  # clip pre-processed img tensor
+        text = self._generate_text(index)  # raw text
+        token, padding = self._pad_text_tokens(text)  # tokenize
+
+        return dict(img=clip, text=token, padding=padding)
+
+    def _get_clip(self, index: int):
+        """Get one random frame from the video."""
+        img_idx, frame_idx = self._get_idx(index)
+        image_path = self.files[img_idx]
+        cap = cv2.VideoCapture(image_path)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        imgs = []
+        for _ in range(self.sample_clip_num):
+            success, img = cap.read()
+            assert success, f'read video {image_path} frame {frame_idx} fail!'
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            imgs.append(img)
+        cap.release()
+        # return the CLIP pre-processed image
+        # of shape [`sample_clip_num`, 3, H, W]
+        return torch.stack([self.clip_transforms(img) for img in imgs], dim=0)
+
+    def _get_idx(self, index):
+        # video_idx and frame_idx
+        return index // self.base_num, index % self.base_num
+
+    def __len__(self):
+        return len(self.files) * self.base_num
+
+
+class ObjRecurCLEVRVisionLanguageCLIPDataModule(
+        ObjCLEVRVisionLanguageCLIPDataModule):
+
+    def __init__(
+        self,
+        data_root: str,
+        train_batch_size: int,
+        val_batch_size: int,
+        clip_transforms: Callable,
+        num_workers: int,
+        max_n_objects: int = 6,
+        sample_clip_num: int = 2,
+    ):
+        super().__init__(data_root, train_batch_size, val_batch_size,
+                         clip_transforms, num_workers, max_n_objects)
+        self.sample_clip_num = sample_clip_num
+
+        self.train_dataset = ObjRecurCLEVRVisionLanguageCLIPDataset(
+            data_root=self.data_root,
+            max_num_images=self.num_train_images,
+            clip_transforms=self.clip_transforms,
+            max_n_objects=self.max_n_objects,
+            split='train',
+            sample_clip_num=self.sample_clip_num,
+        )
+        self.val_dataset = ObjRecurCLEVRVisionLanguageCLIPDataset(
+            data_root=self.data_root,
+            max_num_images=self.num_val_images,
+            clip_transforms=self.clip_transforms,
+            max_n_objects=self.max_n_objects,
+            split='val',
+            sample_clip_num=self.sample_clip_num,
         )

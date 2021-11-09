@@ -65,8 +65,8 @@ class CLEVRVideoFrameDataset(Dataset):
         imgs = []
         for _ in range(self.sample_clip_num):
             success, img = cap.read()
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             assert success, f'read video {image_path} frame {frame_idx} fail!'
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             imgs.append(img)
         cap.release()
         # return shape [sample_clip_num, 3, H, W]

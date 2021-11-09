@@ -430,6 +430,75 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         return slots
 
 
+class ObjRecurSlotAttentionModel(ObjSlotAttentionModel):
+
+    def _get_slot_embedding(self, tokens, paddings):
+        """Encode text, generate slot embeddings.
+
+        Args:
+            tokens: [B, N, C]
+            padding: [B, N]
+        """
+        if not self.use_clip_text:
+            # not generating slots
+            return None, None
+        # we treat each obj as batch dim and get global text (for each phrase)
+        obj_mask = (paddings == 1)
+        obj_tokens = tokens[obj_mask]  # [K, C]
+        text_features = self.clip_model.encode_text(
+            obj_tokens, lin_proj=False, per_token_emb=False,
+            return_mask=False)  # [K, C]
+        text_features = text_features.type(self.dtype)
+        slots = self.text2slot_model(text_features, obj_mask)
+        return slots, None
+
+    def forward(self, x):
+        torch.cuda.empty_cache()
+
+        slots = self.encode(x)
+
+        N = slots.shape[0]
+        C, H, W = x['img'].shape[-3:]
+        recon_combined, recons, masks, slots = self.decode(slots, (N, C, H, W))
+        return recon_combined, recons, masks, slots
+
+    def encode(self, x):
+        """Encode from img to slots."""
+        img, text, padding = x['img'], x['text'], x['padding']
+        bs, sample_num, C, H, W = img.shape
+        encoder_out = self._get_encoder_out(img.view(-1, C, H, W)).view(
+            bs, sample_num, H * W, -1)
+        # `encoder_out` has shape: [batch_size, num, height*width, filter_size]
+
+        # slot initialization
+        slot_mu, slot_log_sigma = self._get_slot_embedding(text, padding)
+        assert slot_log_sigma is None
+
+        # apply SlotAttention iteratively
+        slots, slot_prev = [], slot_mu
+        for clip_idx in range(sample_num):
+            one_slot = self.slot_attention(encoder_out[:, clip_idx], slot_prev)
+            slots.append(one_slot)
+            slot_prev = one_slot
+            # stop the grad of slot_prev
+            slot_prev = slot_prev.detach().clone()
+        slots = torch.stack(slots, dim=1)  # [bs, num, num_slots, slot_size]
+        return slots.flatten(0, 1)  # [N, num_slots, slot_size]
+
+    def loss_function(self, input):
+        recon_combined, recons, masks, slots = self.forward(input)
+        loss = F.mse_loss(recon_combined, input['img'].flatten(0, 1))
+        loss_dict = {
+            "recon_loss": loss,
+        }
+        # masks: [N, num_slots, 1, H, W], apply entropy loss
+        if self.use_entropy_loss:
+            masks = masks[:, :, 0]  # [N, num_slots, H, W]
+            entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
+            loss_dict['entropy'] = entropy_loss
+        return loss_dict
+
+
 class SoftPositionEmbed(nn.Module):
 
     def __init__(self, num_channels: int, hidden_size: int,
