@@ -3,7 +3,7 @@ import os
 import cv2
 import clip
 from PIL import Image
-from typing import Callable
+from typing import Callable, Tuple
 from typing import List
 from typing import Optional
 
@@ -14,7 +14,7 @@ from torch.utils.data import Dataset
 
 
 class CLEVRVisionLanguageCLIPDataset(Dataset):
-    """Dataset that loads one random frame from CLEVR video
+    """Dataset that loads one random frame from CLEVR video.
     Also build one sentence (language) describing the video.
     """
 
@@ -100,9 +100,9 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
             ]  # raw
             text = clip.tokenize(raw_text)  # tokenize to [N, L]
             assert text.shape[0] == video.shape[0]
-            if not self.fine_grained:
+            if not self.fine_grained:  # raw_text are all the same
                 raw_text = raw_text[0]
-            else:
+            else:  # need to concat to get the entire sentence
                 raw_text = self.separater.join(
                     [raw_text[0], raw_text[4], raw_text[8], raw_text[21]])
             return dict(video=video, text=text, raw_text=raw_text)
@@ -339,4 +339,103 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=True,
+        )
+
+
+class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
+    """Dataset that loads one random frame from CLEVR video.
+    One text ('color-shape' of an object) directly for one slot!
+    """
+
+    def __init__(self,
+                 data_root: str,
+                 max_num_images: Optional[int],
+                 clip_transforms: Callable,
+                 max_n_objects: int = 6,
+                 split: str = "train",
+                 clip_len: int = 34,
+                 is_video: bool = False):
+        # TODO: we assume `self.max_n_objects` == 6 here!
+        super().__init__(data_root, max_num_images, clip_transforms,
+                         max_n_objects, split, clip_len, is_video, True, True)
+
+    def __getitem__(self, index: int):
+        """Load one video and get only one frame from it"""
+        if self.is_video:
+            video = self._get_video(index)  # clip pre-processed video frames
+            raw_text = [
+                self._generate_text(index * self.clip_len + idx)
+                for idx in range(self.clip_len)
+            ]  # raw
+            token = [self._pad_text_tokens(text) for text in raw_text]
+            return dict(
+                video=video,
+                text=torch.stack([t[0] for t in token], dim=0),
+                padding=torch.stack([t[1] for t in token], dim=0),
+                raw_text=', '.join(raw_text[0]))
+
+        img = self._get_frame(index)  # clip pre-processed img tensor
+        text = self._generate_text(index)  # raw text
+        token, padding = self._pad_text_tokens(text)  # tokenize
+
+        return dict(img=img, text=token, padding=padding)
+
+    def _pad_text_tokens(self, texts: Tuple[str]):
+        """Tokenize texts and pad to `self.max_n_objects`"""
+        tokens = clip.tokenize(texts)  # [n, C]
+        # TODO: we're using `+1` to count for the background slot
+        num_pad = 1 + self.max_n_objects - tokens.shape[0]
+        pad_tokens = torch.zeros(num_pad, tokens.shape[1], dtype=tokens.dtype)
+        padding = torch.cat(
+            [torch.ones(tokens.shape[0]),
+             torch.zeros(num_pad)], dim=0).long()
+        return torch.cat([tokens, pad_tokens], dim=0), padding
+
+    def _generate_text(self, index: int):
+        """Generate text descriptions of each object in the scene."""
+        img_idx = index // self.clip_len
+        anno = self.annos[img_idx]
+        colors = [obj['color'] for obj in anno['objects']]
+        shapes = [obj['shape'] for obj in anno['objects']]
+        texts = [
+            'a {} {}'.format(color, shape)
+            for color, shape in zip(colors, shapes)
+        ]
+        return texts
+
+
+class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
+
+    def __init__(
+        self,
+        data_root: str,
+        train_batch_size: int,
+        val_batch_size: int,
+        clip_transforms: Callable,
+        num_workers: int,
+        max_n_objects: int = 6,
+    ):
+        super().__init__(data_root, train_batch_size, val_batch_size,
+                         clip_transforms, max_n_objects, num_workers)
+        self.data_root = data_root
+        self.train_batch_size = train_batch_size
+        self.val_batch_size = val_batch_size
+        self.clip_transforms = clip_transforms
+        self.num_workers = num_workers
+        self.max_n_objects = max_n_objects
+
+        train_split = 'val' if self.overfit > 0 else 'train'
+        self.train_dataset = ObjCLEVRVisionLanguageCLIPDataset(
+            data_root=self.data_root,
+            max_num_images=self.num_train_images,
+            clip_transforms=self.clip_transforms,
+            max_n_objects=self.max_n_objects,
+            split=train_split,
+        )
+        self.val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
+            data_root=self.data_root,
+            max_num_images=self.num_val_images,
+            clip_transforms=self.clip_transforms,
+            max_n_objects=self.max_n_objects,
+            split='val',
         )

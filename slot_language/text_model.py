@@ -47,7 +47,7 @@ class MLPText2Slot(nn.Module):
                  slot_size: int,
                  hidden_sizes: Tuple[int] = (256, ),
                  predict_dist: bool = True,
-                 use_bn: bool = True):
+                 use_bn: bool = False):
         super(MLPText2Slot, self).__init__()
         self.num_slots = num_slots
         self.slot_size = slot_size
@@ -168,3 +168,56 @@ class TransformerText2Slot(nn.Module):
         for p in self.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
+
+
+class ObjMLPText2Slot(nn.Module):
+    """Generate slot embedding from text features using MLPs.
+
+    Input for each scene is [N, C]
+
+    Args:
+        in_channels (int): channels of input text features.
+        hidden_sizes (Tuple[int]): MLPs hidden sizes.
+    """
+
+    def __init__(self,
+                 in_channels: int,
+                 slot_size: int,
+                 hidden_sizes: Tuple[int] = (256, ),
+                 use_bn: bool = False):
+        super(MLPText2Slot, self).__init__()
+        self.slot_size = slot_size
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # this is for the background slots that don't have predicted embedding
+        self.slots_mu = nn.Parameter(
+            nn.init.xavier_uniform_(
+                torch.zeros((1, self.slot_size)),
+                gain=nn.init.calculate_gain("linear")))
+        self.slots_log_sigma = nn.Parameter(
+            nn.init.xavier_uniform_(
+                torch.zeros((1, self.slot_size)),
+                gain=nn.init.calculate_gain("linear")))
+
+        # simple share-weight MLPs
+        self.mlp = build_mlps(
+            in_channels, hidden_sizes, slot_size, use_bn=use_bn)
+
+    def forward(self, text_features: Tensor, padding_mask: Tensor):
+        """Forward function.
+
+        Args:
+            text_features: [K, C], features extracted from sentences
+            padding_mask: [B, num_slots] boolean mask
+        """
+        assert text_features.shape[0] == padding_mask.sum()
+        obj_slots = self.mlp(text_features)
+        pad_num = padding_mask.numel() - text_features.shape[0]
+        slots_init = torch.randn(pad_num, self.slot_size).type_as(obj_slots)
+        pad_slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
+        # do the padding and build final slots
+        bs, num_slots = padding_mask.shape
+        slots = torch.empty((bs, num_slots, self.slot_size)).type_as(obj_slots)
+        slots[padding_mask] = obj_slots
+        slots[~padding_mask] = pad_slots
+        return slots

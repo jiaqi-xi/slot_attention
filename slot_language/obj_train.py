@@ -1,5 +1,4 @@
 import os
-import sys
 import importlib
 import argparse
 import numpy as np
@@ -9,24 +8,49 @@ import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from pair_data import PairCLEVRVisionLanguageCLIPDataModule
-from metric_model import MetricSlotAttentionModel
-from metric_method import MetricSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from metric_params import SlotAttentionParams
-
-sys.path.append('../')
-
-from train import build_data_transforms, build_slot_attention_model, process_ckp
+import clip
+from train import build_data_transforms, process_ckp
+from text_model import ObjMLPText2Slot
+from data import ObjCLEVRVisionLanguageCLIPDataModule
+from method import ObjSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from utils import VideoLogCallback, ImageLogCallback
+from model import ObjSlotAttentionModel
+from obj_params import SlotAttentionParams
 
 
-def build_metric_slot_attention_model(params: SlotAttentionParams):
-    model = build_slot_attention_model(params)
-    model = MetricSlotAttentionModel(
-        model,
-        params.slot_size,
-        T=params.metric_temperature,
-        mlp=params.metric_mlp)
+def build_text2slot_model(params: SlotAttentionParams):
+    if not params.use_text2slot:
+        text2slot_model = None
+    else:
+        text2slot_model = ObjMLPText2Slot(
+            params.clip_text_channel,
+            params.slot_size,
+            params.text2slot_hidden_sizes,
+            use_bn=False)
+    return text2slot_model
+
+
+def build_slot_attention_model(params: SlotAttentionParams):
+    clip_model, _ = clip.load(params.clip_arch)
+    text2slot_model = build_text2slot_model(params)
+    model = ObjSlotAttentionModel(
+        clip_model=clip_model,
+        use_clip_vision=params.use_clip_vision,
+        use_clip_text=params.use_text2slot,
+        text2slot_model=text2slot_model,
+        resolution=params.resolution,
+        num_slots=params.num_slots,
+        num_iterations=params.num_iterations,
+        enc_resolution=params.enc_resolution,
+        enc_channels=params.clip_vision_channel,
+        enc_pos_enc=params.enc_pos_enc,
+        slot_size=params.slot_size,
+        dec_kernel_size=params.dec_kernel_size,
+        dec_hidden_dims=params.dec_channels,
+        dec_resolution=params.dec_resolution,
+        slot_mlp_size=params.slot_mlp_size,
+        use_entropy_loss=params.use_entropy_loss,
+    )
     return model
 
 
@@ -51,27 +75,22 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     clip_transforms = build_data_transforms(params)
 
-    model = build_metric_slot_attention_model(params)
+    model = build_slot_attention_model(params)
 
-    clevr_datamodule = PairCLEVRVisionLanguageCLIPDataModule(
+    clevr_datamodule = ObjCLEVRVisionLanguageCLIPDataModule(
         data_root=params.data_root,
         train_batch_size=params.batch_size,
         val_batch_size=params.val_batch_size,
         clip_transforms=clip_transforms,
-        max_n_objects=params.num_slots - 1,
         num_workers=params.num_workers,
-        num_train_images=params.num_train_images,
-        num_val_images=params.num_val_images,
-        fine_grained=params.fine_grained,
-        object_only=params.object_only,
-        overfit=params.overfit,
-        separater=params.separater,
+        max_n_objects=params.num_slots - 1,
     )
 
-    print('Not using max_object_num constraint here!')
-
     method = SlotAttentionMethod(
-        model=model, datamodule=clevr_datamodule, params=params)
+        model=model,
+        datamodule=clevr_datamodule,
+        params=params,
+        entropy_loss_w=params.entropy_loss_w)
 
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params

@@ -19,7 +19,7 @@ from train import build_data_transforms, build_slot_attention_model
 from utils import to_rgb_from_tensor, save_video
 
 
-def build_Metric_slot_attention_model(params: SlotAttentionParams):
+def build_metric_slot_attention_model(params: SlotAttentionParams):
     model = build_slot_attention_model(params)
     model = MetricSlotAttentionModel(
         model,
@@ -33,24 +33,9 @@ def main(params: Optional[SlotAttentionParams] = None):
     if params is None:
         params = SlotAttentionParams()
 
-    assert params.num_slots > 1, "Must have at least 2 slots."
-
-    if params.is_verbose:
-        print(f"INFO: model has {params.num_slots} slots")
-        if params.num_train_images:
-            print("INFO: restricting the train dataset size to "
-                  f"`num_train_images`: {params.num_train_images}")
-        if params.num_val_images:
-            print("INFO: restricting the validation dataset size to "
-                  f"`num_val_images`: {params.num_val_images}")
-        if args.fp16:
-            print('INFO: using FP16 training!')
-        if args.weight:
-            print(f'INFO: loading checkpoint {args.weight}')
-
     clip_transforms = build_data_transforms(params)
 
-    model = build_Metric_slot_attention_model(params)
+    model = build_metric_slot_attention_model(params)
 
     clevr_datamodule = PairCLEVRVisionLanguageCLIPDataModule(
         data_root=params.data_root,
@@ -99,7 +84,7 @@ def inference(model, dataset, num=3):
         video, text, raw_text = \
             batch['video'], batch['text'], batch['raw_text']
         all_texts.append(raw_text)
-        batch = dict(img=video.float().cuda(), text=text.float().cuda())
+        batch = dict(img=video.float().cuda(), text=text.cuda())
         recon_combined, recons, masks, slots = model(batch)
         out = to_rgb_from_tensor(
             torch.cat(
