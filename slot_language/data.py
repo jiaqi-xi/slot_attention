@@ -67,6 +67,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
 
         self.num_videos = len(self.files)
         self.clip_len = clip_len
+        self.base_num = self.clip_len
         self.is_video = is_video
 
         if object_only:
@@ -95,7 +96,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         if self.is_video:
             video = self._get_video(index)  # clip pre-processed video frames
             raw_text = [
-                self._generate_text(index * self.clip_len + idx)
+                self._generate_text(index * self.base_num + idx)
                 for idx in range(self.clip_len)
             ]  # raw
             text = clip.tokenize(raw_text)  # tokenize to [N, L]
@@ -263,10 +264,10 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
 
     def _get_idx(self, index):
         # video_idx and frame_idx
-        return index // self.clip_len, index % self.clip_len
+        return index // self.base_num, index % self.base_num
 
     def __len__(self):
-        return len(self.files) * self.clip_len
+        return len(self.files) * self.base_num
 
 
 class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
@@ -368,7 +369,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         if self.is_video:
             video = self._get_video(index)  # clip pre-processed video frames
             raw_text = [
-                self._generate_text(index * self.clip_len + idx)
+                self._generate_text(index * self.base_num + idx)
                 for idx in range(self.clip_len)
             ]  # raw
             token = [self._pad_text_tokens(text) for text in raw_text]
@@ -467,7 +468,10 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""
         if self.is_video:
-            return super().__getitem__(index)
+            data = super().__getitem__(index)
+            data['text'] = data['text'][:1]
+            data['padding'] = data['padding'][:1]
+            return data
 
         clip = self._get_clip(index)  # clip pre-processed img tensor
         text = self._generate_text(index)  # raw text
@@ -490,14 +494,9 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
         cap.release()
         # return the CLIP pre-processed image
         # of shape [`sample_clip_num`, 3, H, W]
-        return torch.stack([self.clip_transforms(img) for img in imgs], dim=0)
-
-    def _get_idx(self, index):
-        # video_idx and frame_idx
-        return index // self.base_num, index % self.base_num
-
-    def __len__(self):
-        return len(self.files) * self.base_num
+        return torch.stack(
+            [self.clip_transforms(Image.fromarray(img)) for img in imgs],
+            dim=0)
 
 
 class ObjRecurCLEVRVisionLanguageCLIPDataModule(

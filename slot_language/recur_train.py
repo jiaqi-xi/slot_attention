@@ -9,7 +9,8 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
-from train import build_data_transforms, build_text2slot_model, process_ckp
+from train import build_data_transforms, process_ckp
+from obj_train import build_text2slot_model
 from data import ObjRecurCLEVRVisionLanguageCLIPDataModule
 from method import ObjRecurSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from utils import VideoLogCallback, ImageLogCallback

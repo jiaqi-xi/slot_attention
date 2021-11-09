@@ -432,26 +432,6 @@ class ObjSlotAttentionModel(SlotAttentionModel):
 
 class ObjRecurSlotAttentionModel(ObjSlotAttentionModel):
 
-    def _get_slot_embedding(self, tokens, paddings):
-        """Encode text, generate slot embeddings.
-
-        Args:
-            tokens: [B, N, C]
-            padding: [B, N]
-        """
-        if not self.use_clip_text:
-            # not generating slots
-            return None, None
-        # we treat each obj as batch dim and get global text (for each phrase)
-        obj_mask = (paddings == 1)
-        obj_tokens = tokens[obj_mask]  # [K, C]
-        text_features = self.clip_model.encode_text(
-            obj_tokens, lin_proj=False, per_token_emb=False,
-            return_mask=False)  # [K, C]
-        text_features = text_features.type(self.dtype)
-        slots = self.text2slot_model(text_features, obj_mask)
-        return slots, None
-
     def forward(self, x):
         torch.cuda.empty_cache()
 
