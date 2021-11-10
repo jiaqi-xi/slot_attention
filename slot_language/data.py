@@ -2,6 +2,7 @@ import json
 import os
 import cv2
 import clip
+import numpy as np
 from PIL import Image
 from typing import Callable, Tuple
 from typing import List
@@ -267,7 +268,8 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         if self.is_video:
             return index // self.base_num, index % self.base_num
         video_idx = index // (self.base_num // self.val_divide_num)
-        frame_idx = index % (self.base_num // self.val_divide_num) * self.val_divide_num
+        frame_idx = index % (self.base_num //
+                             self.val_divide_num) * self.val_divide_num
         return video_idx, frame_idx
 
     def __len__(self):
@@ -282,8 +284,8 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
             train_batch_size: int,
             val_batch_size: int,
             clip_transforms: Callable,
-            max_n_objects: int,
             num_workers: int,
+            max_n_objects: int = 6,
             num_train_images: Optional[int] = None,
             num_val_images: Optional[int] = None,
             fine_grained: bool = True,
@@ -363,10 +365,12 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
                  max_n_objects: int = 6,
                  split: str = "train",
                  clip_len: int = 34,
-                 is_video: bool = False):
+                 is_video: bool = False,
+                 shuffle_obj: bool = False):
         # TODO: we assume `self.max_n_objects` == 6 here!
         super().__init__(data_root, max_num_images, clip_transforms,
                          max_n_objects, split, clip_len, is_video, True, True)
+        self.shuffle_obj = shuffle_obj
 
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""
@@ -410,6 +414,9 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
             'a {} {}'.format(color, shape)
             for color, shape in zip(colors, shapes)
         ]
+        # shuffle the order of objects
+        if self.shuffle_obj:
+            np.random.shuffle(texts)
         return texts
 
 
@@ -423,16 +430,19 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
         clip_transforms: Callable,
         num_workers: int,
         max_n_objects: int = 6,
+        shuffle_obj: bool = False,
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
-                         clip_transforms, max_n_objects, num_workers)
+                         clip_transforms, num_workers, max_n_objects)
 
+        self.shuffle_obj = shuffle_obj
         self.train_dataset = ObjCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='train',
+            shuffle_obj=self.shuffle_obj,
         )
         self.val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
@@ -440,6 +450,7 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='val',
+            shuffle_obj=self.shuffle_obj,
         )
 
 
@@ -458,11 +469,12 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
             split: str = "train",
             clip_len: int = 34,
             is_video: bool = False,
+            shuffle_obj: bool = False,
             sample_clip_num: int = 2,  # loaded clips per video
     ):
         # TODO: we assume `self.max_n_objects` == 6 here!
         super().__init__(data_root, max_num_images, clip_transforms,
-                         max_n_objects, split, clip_len, is_video)
+                         max_n_objects, split, clip_len, is_video, shuffle_obj)
         self.sample_clip_num = sample_clip_num
         if self.split == 'train':
             self.base_num = self.clip_len - (self.sample_clip_num - 1)
@@ -516,18 +528,21 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
         clip_transforms: Callable,
         num_workers: int,
         max_n_objects: int = 6,
+        shuffle_obj: bool = False,
         sample_clip_num: int = 2,
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
-                         clip_transforms, num_workers, max_n_objects)
-        self.sample_clip_num = sample_clip_num
+                         clip_transforms, num_workers, max_n_objects,
+                         shuffle_obj)
 
+        self.sample_clip_num = sample_clip_num
         self.train_dataset = ObjRecurCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='train',
+            shuffle_obj=self.shuffle_obj,
             sample_clip_num=self.sample_clip_num,
         )
         self.val_dataset = ObjRecurCLEVRVisionLanguageCLIPDataset(
@@ -536,5 +551,6 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='val',
+            shuffle_obj=self.shuffle_obj,
             sample_clip_num=self.sample_clip_num,
         )

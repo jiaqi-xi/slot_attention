@@ -37,7 +37,9 @@ class SlotAttentionParams:
     text2slot_hidden_sizes: Tuple[int] = (512, )
 
     # data
+    # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
+    shuffle_obj: bool = False
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
     sample_clip_num: int = 5

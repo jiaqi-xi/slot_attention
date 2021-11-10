@@ -12,6 +12,7 @@ import clip
 from train import build_data_transforms, process_ckp
 from obj_train import build_text2slot_model
 from data import ObjRecurCLEVRVisionLanguageCLIPDataModule
+from viewpoint_data import ObjRecurCLEVRVisionLanguageViewpointDataModule
 from method import ObjRecurSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from utils import VideoLogCallback, ImageLogCallback
 from model import ObjRecurSlotAttentionModel
@@ -60,13 +61,16 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     model = build_slot_attention_model(params)
 
-    clevr_datamodule = ObjRecurCLEVRVisionLanguageCLIPDataModule(
+    data_module = ObjRecurCLEVRVisionLanguageViewpointDataModule if \
+        'viewpoint' in params.data_root else ObjRecurCLEVRVisionLanguageCLIPDataModule
+    clevr_datamodule = data_module(
         data_root=params.data_root,
         train_batch_size=params.batch_size,
         val_batch_size=params.val_batch_size,
         clip_transforms=clip_transforms,
         num_workers=params.num_workers,
         max_n_objects=params.num_slots - 1,
+        shuffle_obj=params.shuffle_obj,
         sample_clip_num=params.sample_clip_num,
     )
 

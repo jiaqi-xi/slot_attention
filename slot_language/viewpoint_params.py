@@ -60,7 +60,7 @@ class SlotAttentionParams:
     lr: float = 0.0004
     batch_size: int = 64
     val_batch_size: int = 64
-    max_epochs: int = 8
+    max_epochs: int = 80
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5
     weight_decay: float = 0.0

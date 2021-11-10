@@ -87,6 +87,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         clip_transforms=clip_transforms,
         num_workers=params.num_workers,
         max_n_objects=params.num_slots - 1,
+        shuffle_obj=params.shuffle_obj,
     )
 
     method = SlotAttentionMethod(
