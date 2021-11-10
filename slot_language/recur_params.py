@@ -21,6 +21,12 @@ class SlotAttentionParams:
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0
+    # recurrent frames in model
+    sample_clip_num: int = 5
+    # LSTM for slot_embedding update
+    use_lstm: bool = False
+    lstm_hidden_size: int = slot_size
+    lstm_num_layers: int = 1
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
@@ -42,7 +48,6 @@ class SlotAttentionParams:
     shuffle_obj: bool = False
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
-    sample_clip_num: int = 5
 
     # training settings
     gpus: int = 1

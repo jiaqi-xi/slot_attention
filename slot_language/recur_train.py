@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 from typing import Optional
 
+import torch.nn as nn
 import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -19,9 +20,18 @@ from model import ObjRecurSlotAttentionModel
 from recur_params import SlotAttentionParams
 
 
+def build_slot_lstm_model(params: SlotAttentionParams):
+    if not params.use_lstm:
+        return None
+    lstm_model = nn.LSTM(params.slot_size, params.lstm_hidden_size,
+                         params.lstm_num_layers)
+    return lstm_model
+
+
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
+    lstm_model = build_slot_lstm_model(params)
     model = ObjRecurSlotAttentionModel(
         clip_model=clip_model,
         use_clip_vision=params.use_clip_vision,
@@ -39,6 +49,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
         dec_resolution=params.dec_resolution,
         slot_mlp_size=params.slot_mlp_size,
         use_entropy_loss=params.use_entropy_loss,
+        slot_emb_lstm=lstm_model,
     )
     return model
 
