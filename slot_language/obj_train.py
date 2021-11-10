@@ -12,6 +12,7 @@ import clip
 from train import build_data_transforms, process_ckp
 from text_model import ObjMLPText2Slot
 from data import ObjCLEVRVisionLanguageCLIPDataModule
+from viewpoint_data import ObjCLEVRVisionLanguageViewpointDataModule
 from method import ObjSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from utils import VideoLogCallback, ImageLogCallback
 from model import ObjSlotAttentionModel
@@ -77,7 +78,9 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     model = build_slot_attention_model(params)
 
-    clevr_datamodule = ObjCLEVRVisionLanguageCLIPDataModule(
+    data_module = ObjCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
+        params.data_root else ObjCLEVRVisionLanguageCLIPDataModule
+    clevr_datamodule = data_module(
         data_root=params.data_root,
         train_batch_size=params.batch_size,
         val_batch_size=params.val_batch_size,

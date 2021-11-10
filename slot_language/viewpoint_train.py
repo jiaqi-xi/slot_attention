@@ -9,7 +9,7 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 from train import build_data_transforms, build_slot_attention_model, process_ckp
-from data import CLEVRVisionLanguageViewpointDataModule
+from viewpoint_data import CLEVRVisionLanguageViewpointDataModule
 from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from utils import VideoLogCallback, ImageLogCallback
 from viewpoint_params import SlotAttentionParams
@@ -107,6 +107,7 @@ def main(params: Optional[SlotAttentionParams] = None):
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
+        profiler='simple',
         precision=16 if args.fp16 else 32,
         weights_save_path=ckp_path,
     )
