@@ -30,7 +30,7 @@ class MetricSlotAttentionModel(nn.Module):
         self.T = T
 
         # projection head
-        self.mlp = (mlp is not None)
+        self.mlp = (mlp is not None and len(mlp) > 0)
         if self.mlp:
             assert isinstance(mlp, (list, tuple))
             assert mlp[-1] == self.dim

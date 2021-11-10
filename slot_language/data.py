@@ -67,7 +67,8 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
 
         self.num_videos = len(self.files)
         self.clip_len = clip_len
-        self.base_num = self.clip_len
+        self.base_num = self.clip_len  # for video/frame_idx calculation
+        self.val_divide_num = 2 if self.split == 'val' else 1
         self.is_video = is_video
 
         if object_only:
@@ -97,7 +98,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
             video = self._get_video(index)  # clip pre-processed video frames
             raw_text = [
                 self._generate_text(index * self.base_num + idx)
-                for idx in range(self.clip_len)
+                for idx in range(self.base_num)
             ]  # raw
             text = clip.tokenize(raw_text)  # tokenize to [N, L]
             assert text.shape[0] == video.shape[0]
@@ -263,11 +264,14 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         return img_paths, all_annos
 
     def _get_idx(self, index):
-        # video_idx and frame_idx
-        return index // self.base_num, index % self.base_num
+        if self.is_video:
+            return index // self.base_num, index % self.base_num
+        video_idx = index // (self.base_num // self.val_divide_num)
+        frame_idx = index % (self.base_num // self.val_divide_num) * self.val_divide_num
+        return video_idx, frame_idx
 
     def __len__(self):
-        return len(self.files) * self.base_num
+        return len(self.files) * (self.base_num // self.val_divide_num)
 
 
 class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
@@ -370,7 +374,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
             video = self._get_video(index)  # clip pre-processed video frames
             raw_text = [
                 self._generate_text(index * self.base_num + idx)
-                for idx in range(self.clip_len)
+                for idx in range(self.base_num)
             ]  # raw
             token = [self._pad_text_tokens(text) for text in raw_text]
             return dict(
@@ -463,7 +467,9 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
         if self.split == 'train':
             self.base_num = self.clip_len - (self.sample_clip_num - 1)
         else:
-            self.base_num = self.clip_len // self.sample_clip_num
+            self.base_num = self.clip_len
+        self.val_divide_num = 2 * self.sample_clip_num if \
+            self.split == 'val' else 1
 
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""

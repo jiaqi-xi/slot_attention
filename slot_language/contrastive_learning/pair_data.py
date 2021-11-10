@@ -14,16 +14,19 @@ class PairCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
 
         # TODO: the text should be the same?
         assert self.object_only or not self.fine_grained
+        # no use this here for code simplicity
+        self.base_num = self.clip_len
+        self.val_divide_num = 1
 
     def __getitem__(self, index: int):
         """Load one video and get only *TWO* frames from it"""
         if self.is_video:
             return super().__getitem__(index)
 
-        video_idx, frame_idx = index // self.clip_len, index % self.clip_len
-        paired_frame_idx = (np.random.choice(self.clip_len - 1) +
-                            (frame_idx + 1)) % self.clip_len
-        paired_index = video_idx * self.clip_len + paired_frame_idx
+        video_idx, frame_idx = self._get_idx(index)
+        paired_frame_idx = (np.random.choice(self.base_num - 1) +
+                            (frame_idx + 1)) % self.base_num
+        paired_index = video_idx * self.base_num + paired_frame_idx
         assert paired_frame_idx != frame_idx
 
         data1 = super().__getitem__(index)
