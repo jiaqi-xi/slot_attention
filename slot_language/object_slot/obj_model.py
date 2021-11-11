@@ -1,4 +1,3 @@
-from _typeshed import NoneType
 import sys
 from typing import Tuple
 
@@ -73,7 +72,7 @@ class ObjBgSepSlotAttention(BgSepSlotAttention):
             bg_q = self.bg_project_q(bg_slots)
 
             logits = torch.empty((bs, self.num_slots, num_inputs)).type_as(k)
-            k_trans = k.transpose(2, 1)
+            k_trans = k.transpose(2, 1).contiguous()
             for i in range(bs):
                 one_fg_q = fg_q[fg_start_idx[i]:fg_end_idx[i]].unsqueeze(0)
                 fg_logits = torch.matmul(one_fg_q, k_trans[i:i + 1])
@@ -144,7 +143,7 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             obj_tokens, lin_proj=False, per_token_emb=False,
             return_mask=False)  # [K, C]
         text_features = text_features.type(self.dtype)
-        slots = self.text2slot_model(text_features, fg_mask=obj_mask)
+        slots = self.text2slot_model(text_features, obj_mask)
         return slots, obj_mask
 
     def encode(self, x):
@@ -157,7 +156,7 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         slot_mu, obj_mask = self._get_slot_embedding(text, padding)
 
         # (batch_size, self.num_slots, self.slot_size)
-        slots = self.slot_attention(encoder_out, slot_mu, None, obj_mask)
+        slots = self.slot_attention(encoder_out, slot_mu, fg_mask=obj_mask)
         return slots
 
 
@@ -234,7 +233,7 @@ class ObjRecurSlotAttentionModel(ObjSlotAttentionModel):
             (h, c) = self._init_lstm_hidden(slot_mu)
         for clip_idx in range(sample_num):
             one_slot = self.slot_attention(
-                encoder_out[:, clip_idx], slot_prev, None, fg_mask=obj_mask)
+                encoder_out[:, clip_idx], slot_prev, fg_mask=obj_mask)
             slots.append(one_slot)
             slot_prev = one_slot
             # stop the grad of slot_prev

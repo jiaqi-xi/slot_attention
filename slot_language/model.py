@@ -222,7 +222,7 @@ class BgSepSlotAttention(nn.Module):
         if slots_mu is not None and slots_log_sigma is None:
             # Text2Slot predicts slot embeddings for each slot individually
             assert len(slots_mu.shape) == 3, 'wrong slot embedding shape!'
-            slots, bg_slots = slots_mu[..., :-1], slots_mu[..., -1:]
+            slots, bg_slots = slots_mu[:, :-1], slots_mu[:, -1:]
         else:
             # TODO: currently not supporting Text2Slot predict distribution
             assert slots_mu is None and slots_log_sigma is None
@@ -296,15 +296,15 @@ class BgSepSlotAttention(nn.Module):
             # GRU is expecting inputs of size (N,H)
             # so flatten batch and slots dimension
             fg_slots = self.gru(
-                fg_updates.view(bs * (self.num_slots - 1), self.slot_size),
-                fg_slots_prev.view(bs * (self.num_slots - 1), self.slot_size),
+                fg_updates.reshape(bs * (self.num_slots - 1), self.slot_size),
+                fg_slots_prev.reshape(bs * (self.num_slots - 1), self.slot_size),
             )
             fg_slots = fg_slots.view(bs, self.num_slots - 1, self.slot_size)
             fg_slots = fg_slots + self.mlp(fg_slots)
 
             bg_slots = self.gru(
-                bg_updates.view(bs * 1, self.slot_size),
-                bg_slots_prev.view(bs * 1, self.slot_size),
+                bg_updates.reshape(bs * 1, self.slot_size),
+                bg_slots_prev.reshape(bs * 1, self.slot_size),
             )
             bg_slots = bg_slots.view(bs, 1, self.slot_size)
             bg_slots = bg_slots + self.bg_mlp(bg_slots)
