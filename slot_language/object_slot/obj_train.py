@@ -1,38 +1,47 @@
 import os
+import sys
 import importlib
 import argparse
 import numpy as np
 from typing import Optional
 
-import torch.nn as nn
 import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
+from obj_data import ObjCLEVRVisionLanguageCLIPDataModule
+from obj_method import ObjSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from obj_model import ObjSlotAttentionModel
+from obj_params import SlotAttentionParams
+
+sys.path.append('../')
+
 from train import build_data_transforms, process_ckp
-from obj_train import build_text2slot_model
-from data import ObjRecurCLEVRVisionLanguageCLIPDataModule
-from viewpoint_data import ObjRecurCLEVRVisionLanguageViewpointDataModule
-from method import ObjRecurSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from text_model import ObjMLPText2Slot
 from utils import VideoLogCallback, ImageLogCallback
-from model import ObjRecurSlotAttentionModel
-from recur_params import SlotAttentionParams
+
+sys.path.append('../viewpoint_dataset/')
+
+from viewpoint_data import ObjCLEVRVisionLanguageViewpointDataModule
 
 
-def build_slot_lstm_model(params: SlotAttentionParams):
-    if not params.use_lstm:
-        return None
-    lstm_model = nn.LSTM(params.slot_size, params.lstm_hidden_size,
-                         params.lstm_num_layers)
-    return lstm_model
+def build_text2slot_model(params: SlotAttentionParams):
+    if not params.use_text2slot:
+        text2slot_model = None
+    else:
+        text2slot_model = ObjMLPText2Slot(
+            params.clip_text_channel,
+            params.slot_size,
+            params.text2slot_hidden_sizes,
+            use_bn=False)
+    return text2slot_model
 
 
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
-    lstm_model = build_slot_lstm_model(params)
-    model = ObjRecurSlotAttentionModel(
+    model = ObjSlotAttentionModel(
         clip_model=clip_model,
         use_clip_vision=params.use_clip_vision,
         use_clip_text=params.use_text2slot,
@@ -49,7 +58,6 @@ def build_slot_attention_model(params: SlotAttentionParams):
         dec_resolution=params.dec_resolution,
         slot_mlp_size=params.slot_mlp_size,
         use_entropy_loss=params.use_entropy_loss,
-        slot_emb_lstm=lstm_model,
     )
     return model
 
@@ -61,8 +69,13 @@ def main(params: Optional[SlotAttentionParams] = None):
     assert params.num_slots > 1, "Must have at least 2 slots."
 
     if params.is_verbose:
-        print(f'INFO: model has {params.num_slots} slots')
-        print(f'INFO: using {params.sample_clip_num} clips')
+        print(f"INFO: model has {params.num_slots} slots")
+        if params.num_train_images:
+            print("INFO: restricting the train dataset size to "
+                  f"`num_train_images`: {params.num_train_images}")
+        if params.num_val_images:
+            print("INFO: restricting the validation dataset size to "
+                  f"`num_val_images`: {params.num_val_images}")
         if args.fp16:
             print('INFO: using FP16 training!')
         if args.weight:
@@ -72,8 +85,8 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     model = build_slot_attention_model(params)
 
-    data_module = ObjRecurCLEVRVisionLanguageViewpointDataModule if \
-        'viewpoint' in params.data_root else ObjRecurCLEVRVisionLanguageCLIPDataModule
+    data_module = ObjCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
+        params.data_root else ObjCLEVRVisionLanguageCLIPDataModule
     clevr_datamodule = data_module(
         data_root=params.data_root,
         train_batch_size=params.batch_size,
@@ -82,7 +95,6 @@ def main(params: Optional[SlotAttentionParams] = None):
         num_workers=params.num_workers,
         max_n_objects=params.num_slots - 1,
         shuffle_obj=params.shuffle_obj,
-        sample_clip_num=params.sample_clip_num,
     )
 
     method = SlotAttentionMethod(

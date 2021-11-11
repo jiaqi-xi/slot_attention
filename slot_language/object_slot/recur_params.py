@@ -52,8 +52,8 @@ class SlotAttentionParams:
     # training settings
     gpus: int = 1
     lr: float = 0.0004
-    batch_size: int = 20
-    val_batch_size: int = 20
+    batch_size: int = 24
+    val_batch_size: int = 24
     max_epochs: int = 6
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5

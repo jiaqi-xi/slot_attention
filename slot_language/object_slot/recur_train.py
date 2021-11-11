@@ -1,18 +1,64 @@
 import os
+import sys
 import importlib
 import argparse
 import numpy as np
 from typing import Optional
 
+import torch.nn as nn
 import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from train import build_data_transforms, build_slot_attention_model, process_ckp
-from viewpoint_data import CLEVRVisionLanguageViewpointDataModule
-from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
+import clip
+from obj_model import ObjRecurSlotAttentionModel
+from obj_train import build_text2slot_model
+from obj_data import ObjRecurCLEVRVisionLanguageCLIPDataModule
+from obj_method import ObjRecurSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from recur_params import SlotAttentionParams
+
+sys.path.append('../')
+
+from train import build_data_transforms, process_ckp
 from utils import VideoLogCallback, ImageLogCallback
-from viewpoint_params import SlotAttentionParams
+
+sys.path.append('../viewpoint_dataset/')
+
+from viewpoint_data import ObjRecurCLEVRVisionLanguageViewpointDataModule
+
+
+def build_slot_lstm_model(params: SlotAttentionParams):
+    if not params.use_lstm:
+        return None
+    lstm_model = nn.LSTM(params.slot_size, params.lstm_hidden_size,
+                         params.lstm_num_layers)
+    return lstm_model
+
+
+def build_slot_attention_model(params: SlotAttentionParams):
+    clip_model, _ = clip.load(params.clip_arch)
+    text2slot_model = build_text2slot_model(params)
+    lstm_model = build_slot_lstm_model(params)
+    model = ObjRecurSlotAttentionModel(
+        clip_model=clip_model,
+        use_clip_vision=params.use_clip_vision,
+        use_clip_text=params.use_text2slot,
+        text2slot_model=text2slot_model,
+        resolution=params.resolution,
+        num_slots=params.num_slots,
+        num_iterations=params.num_iterations,
+        enc_resolution=params.enc_resolution,
+        enc_channels=params.clip_vision_channel,
+        enc_pos_enc=params.enc_pos_enc,
+        slot_size=params.slot_size,
+        dec_kernel_size=params.dec_kernel_size,
+        dec_hidden_dims=params.dec_channels,
+        dec_resolution=params.dec_resolution,
+        slot_mlp_size=params.slot_mlp_size,
+        use_entropy_loss=params.use_entropy_loss,
+        slot_emb_lstm=lstm_model,
+    )
+    return model
 
 
 def main(params: Optional[SlotAttentionParams] = None):
@@ -22,13 +68,8 @@ def main(params: Optional[SlotAttentionParams] = None):
     assert params.num_slots > 1, "Must have at least 2 slots."
 
     if params.is_verbose:
-        print(f"INFO: model has {params.num_slots} slots")
-        if params.num_train_images:
-            print("INFO: restricting the train dataset size to "
-                  f"`num_train_images`: {params.num_train_images}")
-        if params.num_val_images:
-            print("INFO: restricting the validation dataset size to "
-                  f"`num_val_images`: {params.num_val_images}")
+        print(f'INFO: model has {params.num_slots} slots')
+        print(f'INFO: using {params.sample_clip_num} clips')
         if args.fp16:
             print('INFO: using FP16 training!')
         if args.weight:
@@ -38,20 +79,18 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     model = build_slot_attention_model(params)
 
-    clevr_datamodule = CLEVRVisionLanguageViewpointDataModule(
+    data_module = ObjRecurCLEVRVisionLanguageViewpointDataModule if \
+        'viewpoint' in params.data_root else ObjRecurCLEVRVisionLanguageCLIPDataModule
+    clevr_datamodule = data_module(
         data_root=params.data_root,
         train_batch_size=params.batch_size,
         val_batch_size=params.val_batch_size,
         clip_transforms=clip_transforms,
-        max_n_objects=params.num_slots - 1,
         num_workers=params.num_workers,
-        num_train_images=params.num_train_images,
-        num_val_images=params.num_val_images,
-        overfit=params.overfit,
-        separater=params.separater,
+        max_n_objects=params.num_slots - 1,
+        shuffle_obj=params.shuffle_obj,
+        sample_clip_num=params.sample_clip_num,
     )
-
-    print('Not using max_object_num constraint here!')
 
     method = SlotAttentionMethod(
         model=model,
