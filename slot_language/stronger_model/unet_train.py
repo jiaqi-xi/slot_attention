@@ -39,8 +39,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
         dec_channels=params.dec_channels,
         enc_pos_enc=params.enc_pos_enc,
         dec_resolution=params.dec_resolution,
-        spec_decoder=params.spec_decoder
-        if hasattr(params, 'spec_decoder') else False,
+        spec_decoder=params.spec_decoder,
         use_double_conv=params.use_double_conv,
         use_maxpool=params.use_maxpool,
         use_bilinear=params.use_bilinear,

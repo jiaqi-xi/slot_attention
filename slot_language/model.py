@@ -58,25 +58,7 @@ class SlotAttention(nn.Module):
                 gain=nn.init.calculate_gain("linear")),
         )
 
-    def forward(self, inputs: Tensor, slots_mu: Tensor, slots_log_sigma=None):
-        """Forward function.
-
-        Args:
-            inputs: [B, N, C], flattened per-pixel features
-            slots_mu: if [B, M, C], then directly use it as embeddings;
-                if [B, C], used to do sampling (mu shared by slots)
-            slots_log_sigma: if None, no sampling;
-                if [B, C], used to do sampling (sigma shared by slots)
-        """
-        # `inputs` has shape [batch_size, num_inputs, inputs_size].
-        # `num_inputs` is actually the spatial dim of feature map (H*W)
-        batch_size, num_inputs, inputs_size = inputs.shape
-        inputs = self.norm_inputs(inputs)  # Apply layer norm to the input.
-        # Shape: [batch_size, num_inputs, slot_size].
-        k = self.project_k(inputs)
-        # Shape: [batch_size, num_inputs, slot_size].
-        v = self.project_v(inputs)
-
+    def _init_slots(self, batch_size, slots_mu, slots_log_sigma):
         # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
         if slots_mu is not None and slots_log_sigma is None:
             # Text2Slot predicts slot embeddings for each slot individually
@@ -104,8 +86,30 @@ class SlotAttention(nn.Module):
             else:
                 slots_init = torch.randn(
                     (batch_size, self.num_slots, self.slot_size))
-            slots_init = slots_init.type_as(inputs)
             slots = slots_mu + slots_log_sigma.exp() * slots_init
+        return slots
+
+    def forward(self, inputs: Tensor, slots_mu: Tensor, slots_log_sigma=None):
+        """Forward function.
+
+        Args:
+            inputs: [B, N, C], flattened per-pixel features
+            slots_mu: if [B, M, C], then directly use it as embeddings;
+                if [B, C], used to do sampling (mu shared by slots)
+            slots_log_sigma: if None, no sampling;
+                if [B, C], used to do sampling (sigma shared by slots)
+        """
+        # `inputs` has shape [batch_size, num_inputs, inputs_size].
+        # `num_inputs` is actually the spatial dim of feature map (H*W)
+        bs, num_inputs, inputs_size = inputs.shape
+        inputs = self.norm_inputs(inputs)  # Apply layer norm to the input.
+        # Shape: [batch_size, num_inputs, slot_size].
+        k = self.project_k(inputs)
+        # Shape: [batch_size, num_inputs, slot_size].
+        v = self.project_v(inputs)
+
+        # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
+        slots = self._init_slots(bs, slots_mu, slots_log_sigma).type_as(inputs)
 
         # Multiple rounds of attention.
         for _ in range(self.num_iterations):
@@ -131,12 +135,180 @@ class SlotAttention(nn.Module):
             # GRU is expecting inputs of size (N,H)
             # so flatten batch and slots dimension
             slots = self.gru(
-                updates.view(batch_size * self.num_slots, self.slot_size),
-                slots_prev.view(batch_size * self.num_slots, self.slot_size),
+                updates.view(bs * self.num_slots, self.slot_size),
+                slots_prev.view(bs * self.num_slots, self.slot_size),
             )
-            slots = slots.view(batch_size, self.num_slots, self.slot_size)
+            slots = slots.view(bs, self.num_slots, self.slot_size)
             slots = slots + self.mlp(self.norm_mlp(slots))
 
+        return slots
+
+
+class BgSepSlotAttention(nn.Module):
+    """Slot attention module that iteratively performs cross-attention.
+
+    The BgSep one processes fg slots and bg slots seperately.
+    We assume the last slot is for background.
+    """
+
+    def __init__(self,
+                 in_features,
+                 num_iterations,
+                 num_slots,
+                 slot_size,
+                 mlp_hidden_size,
+                 epsilon=1e-6):
+        super().__init__()
+        self.in_features = in_features
+        self.num_iterations = num_iterations
+        self.num_slots = num_slots
+        self.slot_size = slot_size  # number of hidden layers in slot dimensions
+        self.mlp_hidden_size = mlp_hidden_size
+        self.epsilon = epsilon
+        self.attn_scale = self.slot_size**-0.5
+
+        self.norm_inputs = nn.LayerNorm(self.in_features)
+
+        # Linear maps for the attention module.
+        self.project_k = nn.Linear(in_features, self.slot_size, bias=False)
+        self.project_v = nn.Linear(in_features, self.slot_size, bias=False)
+        self.project_q = nn.Sequential(
+            nn.LayerNorm(self.slot_size),
+            nn.Linear(self.slot_size, self.slot_size, bias=False))
+        # for bg
+        self.bg_project_q = nn.Sequential(
+            nn.LayerNorm(self.slot_size),
+            nn.Linear(self.slot_size, self.slot_size, bias=False))
+
+        # Slot update functions.
+        self.gru = nn.GRUCell(self.slot_size, self.slot_size)
+        self.mlp = nn.Sequential(
+            nn.LayerNorm(self.slot_size),
+            nn.Linear(self.slot_size, self.mlp_hidden_size),
+            nn.ReLU(),
+            nn.Linear(self.mlp_hidden_size, self.slot_size),
+        )
+        # for bg
+        self.bg_gru = nn.GRUCell(self.slot_size, self.slot_size)
+        self.bg_mlp = nn.Sequential(
+            nn.LayerNorm(self.slot_size),
+            nn.Linear(self.slot_size, self.mlp_hidden_size),
+            nn.ReLU(),
+            nn.Linear(self.mlp_hidden_size, self.slot_size),
+        )
+
+        # TODO: in case we don't use Text2Slot model
+        self.slots_mu = nn.Parameter(
+            nn.init.xavier_uniform_(
+                torch.zeros((1, 1, self.slot_size)),
+                gain=nn.init.calculate_gain("linear")))
+        self.slots_log_sigma = nn.Parameter(
+            nn.init.xavier_uniform_(
+                torch.zeros((1, 1, self.slot_size)),
+                gain=nn.init.calculate_gain("linear")))
+        # for bg
+        self.bg_slots_mu = nn.Parameter(
+            nn.init.xavier_uniform_(
+                torch.zeros((1, 1, self.slot_size)),
+                gain=nn.init.calculate_gain("linear")))
+        self.bg_slots_log_sigma = nn.Parameter(
+            nn.init.xavier_uniform_(
+                torch.zeros((1, 1, self.slot_size)),
+                gain=nn.init.calculate_gain("linear")))
+
+    def _init_slots(self, bs, slots_mu, slots_log_sigma):
+        # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
+        if slots_mu is not None and slots_log_sigma is None:
+            # Text2Slot predicts slot embeddings for each slot individually
+            assert len(slots_mu.shape) == 3, 'wrong slot embedding shape!'
+            slots = slots_mu
+        else:
+            # TODO: currently not supporting Text2Slot predict distribution
+            assert slots_mu is None and slots_log_sigma is None
+            # not using Text2Slot
+            mu = self.slots_mu.repeat(bs, self.num_slots - 1, 1)
+            log_sigma = self.slots_log_sigma.repeat(bs, self.num_slots - 1, 1)
+            bg_mu = self.bg_slots_mu.repeat(bs, 1, 1)
+            bg_log_sigma = self.bg_slots_log_sigma.repeat(bs, 1, 1)
+            # if in testing mode, fix random seed to get same slot embedding
+            if not self.training:
+                torch.manual_seed(0)
+                torch.cuda.manual_seed_all(0)
+                slots_init = torch.randn(
+                    (1, self.num_slots - 1, self.slot_size)).repeat(bs, 1, 1)
+                bg_slots_init = torch.randn(
+                    (1, 1, self.slot_size)).repeat(bs, 1, 1)
+            # in training mode, sample from Gaussian with mean and std
+            else:
+                slots_init = torch.randn_like(mu)
+                bg_slots_init = torch.randn_like(bg_mu)
+            slots = mu + log_sigma.exp() * slots_init
+            bg_slots = bg_mu + bg_log_sigma.exp() * bg_slots_init
+        return slots, bg_slots
+
+    def forward(self, inputs: Tensor, slots_mu: Tensor, slots_log_sigma=None):
+        """Forward function.
+
+        Args:
+            inputs: [B, N, C], flattened per-pixel features
+            slots_mu: if [B, M, C], then directly use it as embeddings;
+                if [B, C], used to do sampling (mu shared by slots)
+            slots_log_sigma: if None, no sampling;
+                if [B, C], used to do sampling (sigma shared by slots)
+        """
+        # `inputs` has shape [batch_size, num_inputs, inputs_size].
+        # `num_inputs` is actually the spatial dim of feature map (H*W)
+        bs, num_inputs, inputs_size = inputs.shape
+        inputs = self.norm_inputs(inputs)  # Apply layer norm to the input.
+        # Shape: [batch_size, num_inputs, slot_size].
+        k = self.project_k(inputs)
+        # Shape: [batch_size, num_inputs, slot_size].
+        v = self.project_v(inputs)
+
+        # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
+        fg_slots, bg_slots = self._init_slots(bs, slots_mu, slots_log_sigma)
+
+        # Multiple rounds of attention.
+        for _ in range(self.num_iterations):
+            fg_slots_prev = fg_slots
+            bg_slots_prev = bg_slots
+
+            # Attention.
+            fg_q = self.project_q(fg_slots)
+            bg_q = self.bg_project_q(bg_slots)
+
+            fg_logits = self.attn_scale * torch.matmul(k, fg_q.transpose(2, 1))
+            bg_logits = self.attn_scale * torch.matmul(k, bg_q.transpose(2, 1))
+            logits = torch.cat([fg_logits, bg_logits], dim=-1)
+            attn = F.softmax(logits, dim=-1) + self.epsilon
+            # `attn` has shape: [batch_size, num_inputs, num_slots].
+
+            # Weighted mean.
+            fg_attn, bg_attn = attn[..., :-1], attn[..., -1:]
+            fg_attn = fg_attn / fg_attn.sum(dim=1, keepdim=True)
+            bg_attn = bg_attn / bg_attn.sum(dim=1, keepdim=True)
+            fg_updates = torch.matmul(fg_attn.transpose(1, 2), v)
+            bg_updates = torch.matmul(bg_attn.transpose(1, 2), v)
+            # `updates` has shape: [batch_size, num_slots, slot_size].
+
+            # Slot update.
+            # GRU is expecting inputs of size (N,H)
+            # so flatten batch and slots dimension
+            fg_slots = self.gru(
+                fg_updates.view(bs * (self.num_slots - 1), self.slot_size),
+                fg_slots_prev.view(bs * (self.num_slots - 1), self.slot_size),
+            )
+            fg_slots = fg_slots.view(bs, self.num_slots - 1, self.slot_size)
+            fg_slots = fg_slots + self.mlp(fg_slots)
+
+            bg_slots = self.gru(
+                bg_updates.view(bs * 1, self.slot_size),
+                bg_slots_prev.view(bs * 1, self.slot_size),
+            )
+            bg_slots = bg_slots.view(bs, 1, self.slot_size)
+            bg_slots = bg_slots + self.bg_mlp(bg_slots)
+
+        slots = torch.cat([fg_slots, bg_slots], dim=1)
         return slots
 
 
@@ -168,6 +340,7 @@ class SlotAttentionModel(nn.Module):
         use_word_set: bool = False,
         use_padding_mask: bool = False,
         use_entropy_loss: bool = False,
+        use_bg_sep_slot: bool = False,
     ):
         super().__init__()
         self.resolution = resolution
@@ -284,7 +457,8 @@ class SlotAttentionModel(nn.Module):
         self.decoder_pos_embedding = SoftPositionEmbed(3, self.out_features,
                                                        self.dec_resolution)
 
-        self.slot_attention = SlotAttention(
+        slot_attn = BgSepSlotAttention if use_bg_sep_slot else SlotAttention
+        self.slot_attention = slot_attn(
             in_features=self.out_features,
             num_iterations=self.num_iterations,
             num_slots=self.num_slots,
