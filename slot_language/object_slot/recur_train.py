@@ -56,6 +56,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
         dec_resolution=params.dec_resolution,
         slot_mlp_size=params.slot_mlp_size,
         use_entropy_loss=params.use_entropy_loss,
+        use_bg_sep_slot=params.use_bg_sep_slot,
         slot_emb_lstm=lstm_model,
     )
     return model

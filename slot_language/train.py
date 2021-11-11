@@ -99,6 +99,8 @@ def build_slot_attention_model(params: SlotAttentionParams):
         and params.text2slot_arch in ['Transformer', 'DETR']
         and params.text2slot_padding_mask,
         use_entropy_loss=params.use_entropy_loss,
+        use_bg_sep_slot=params.use_bg_sep_slot if hasattr(
+            params, 'use_bg_sep_slot') else False,
     )
     return model
 

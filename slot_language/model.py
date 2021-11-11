@@ -222,7 +222,7 @@ class BgSepSlotAttention(nn.Module):
         if slots_mu is not None and slots_log_sigma is None:
             # Text2Slot predicts slot embeddings for each slot individually
             assert len(slots_mu.shape) == 3, 'wrong slot embedding shape!'
-            slots = slots_mu
+            slots, bg_slots = slots_mu[..., :-1], slots_mu[..., -1:]
         else:
             # TODO: currently not supporting Text2Slot predict distribution
             assert slots_mu is None and slots_log_sigma is None
@@ -458,6 +458,7 @@ class SlotAttentionModel(nn.Module):
         self.decoder_pos_embedding = SoftPositionEmbed(3, self.out_features,
                                                        self.dec_resolution)
 
+        self.use_bg_sep_slot = use_bg_sep_slot
         slot_attn = BgSepSlotAttention if use_bg_sep_slot else SlotAttention
         self.slot_attention = slot_attn(
             in_features=self.out_features,

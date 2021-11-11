@@ -21,6 +21,8 @@ class SlotAttentionParams:
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0
+    # whether treat bg slot separately
+    use_bg_sep_slot: bool = False
     # recurrent frames in model
     sample_clip_num: int = 5
     # LSTM for slot_embedding update
