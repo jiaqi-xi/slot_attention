@@ -86,6 +86,7 @@ class SlotAttention(nn.Module):
             else:
                 slots_init = torch.randn(
                     (batch_size, self.num_slots, self.slot_size))
+            slots_init = slots_init.type_as(slots_mu)
             slots = slots_mu + slots_log_sigma.exp() * slots_init
         return slots
 
@@ -242,8 +243,8 @@ class BgSepSlotAttention(nn.Module):
             else:
                 slots_init = torch.randn_like(mu)
                 bg_slots_init = torch.randn_like(bg_mu)
-            slots = mu + log_sigma.exp() * slots_init
-            bg_slots = bg_mu + bg_log_sigma.exp() * bg_slots_init
+            slots = mu + log_sigma.exp() * slots_init.type_as(mu)
+            bg_slots = bg_mu + bg_log_sigma.exp() * bg_slots_init.type_as(mu)
         return slots, bg_slots
 
     def forward(self, inputs: Tensor, slots_mu: Tensor, slots_log_sigma=None):
