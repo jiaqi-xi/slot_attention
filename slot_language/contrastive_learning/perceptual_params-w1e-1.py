@@ -78,5 +78,5 @@ class SlotAttentionParams:
     decay_steps_pct: float = 0.2
 
     # perceptual learning
-    perceptual_loss_w: float = 1.0
+    perceptual_loss_w: float = 0.1
     perceptual_arch: str = 'alex'

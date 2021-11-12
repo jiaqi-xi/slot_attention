@@ -60,11 +60,11 @@ class SlotAttentionParams:
     overfit: int = -1  # overfit to `overfit` data samples
 
     # training settings
-    gpus: int = 1
-    lr: float = 0.0004
-    batch_size: int = 64
-    val_batch_size: int = 64
-    max_epochs: int = 8
+    gpus: int = 4
+    lr: float = 0.001
+    batch_size: int = 48 * 4
+    val_batch_size: int = 48 * 4
+    max_epochs: int = 12
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5
     weight_decay: float = 0.0
@@ -72,11 +72,11 @@ class SlotAttentionParams:
     num_val_images: Optional[int] = None
     is_logger_enabled: bool = True
     is_verbose: bool = True
-    num_workers: int = 4
+    num_workers: int = 5 * 4
     n_samples: int = 5
     warmup_steps_pct: float = 0.02
     decay_steps_pct: float = 0.2
 
     # perceptual learning
-    perceptual_loss_w: float = 1.0
+    perceptual_loss_w: float = 0.1
     perceptual_arch: str = 'alex'
