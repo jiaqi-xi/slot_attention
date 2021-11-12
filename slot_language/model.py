@@ -90,7 +90,7 @@ class SlotAttention(nn.Module):
             slots = slots_mu + slots_log_sigma.exp() * slots_init
         return slots
 
-    def forward(self, inputs: Tensor, slots_mu: Tensor, slots_log_sigma=None):
+    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
         """Forward function.
 
         Args:
@@ -247,7 +247,7 @@ class BgSepSlotAttention(nn.Module):
             bg_slots = bg_mu + bg_log_sigma.exp() * bg_slots_init.type_as(mu)
         return slots, bg_slots
 
-    def forward(self, inputs: Tensor, slots_mu: Tensor, slots_log_sigma=None):
+    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
         """Forward function.
 
         Args:

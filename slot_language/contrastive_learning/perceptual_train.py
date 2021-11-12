@@ -23,9 +23,7 @@ from utils import VideoLogCallback, ImageLogCallback
 def build_perceptual_slot_attention_model(params: SlotAttentionParams):
     model = build_slot_attention_model(params)
     model = PerceptualSlotAttentionModel(
-        model,
-        params.slot_size,
-        arch=params.perceptual_arch)
+        model, arch=params.perceptual_arch)
     return model
 
 

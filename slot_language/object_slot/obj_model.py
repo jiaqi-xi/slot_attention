@@ -113,11 +113,51 @@ class ObjBgSepSlotAttention(BgSepSlotAttention):
 
 class ObjSlotAttentionModel(SlotAttentionModel):
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self,
+                 clip_model: CLIP,
+                 use_clip_vision: bool,
+                 use_clip_text: bool,
+                 text2slot_model: nn.Module,
+                 resolution: Tuple[int, int],
+                 num_slots: int,
+                 num_iterations: int,
+                 enc_resolution: Tuple[int, int] = ...,
+                 enc_channels: int = 3,
+                 enc_pos_enc: bool = False,
+                 slot_size: int = 64,
+                 dec_kernel_size: int = 5,
+                 dec_hidden_dims: Tuple[int, ...] = ...,
+                 dec_resolution: Tuple[int, int] = ...,
+                 slot_mlp_size: int = 128,
+                 use_word_set: bool = False,
+                 use_padding_mask: bool = False,
+                 use_entropy_loss: bool = False,
+                 use_bg_sep_slot: bool = False):
+        super().__init__(
+            clip_model,
+            use_clip_vision,
+            use_clip_text,
+            text2slot_model,
+            resolution,
+            num_slots,
+            num_iterations,
+            enc_resolution=enc_resolution,
+            enc_channels=enc_channels,
+            enc_pos_enc=enc_pos_enc,
+            slot_size=slot_size,
+            dec_kernel_size=dec_kernel_size,
+            dec_hidden_dims=dec_hidden_dims,
+            dec_resolution=dec_resolution,
+            slot_mlp_size=slot_mlp_size,
+            use_word_set=use_word_set,
+            use_padding_mask=use_padding_mask,
+            use_entropy_loss=use_entropy_loss,
+            use_bg_sep_slot=use_bg_sep_slot)
 
-        slot_attn = ObjBgSepSlotAttention if \
-            self.use_bg_sep_slot else ObjSlotAttention
+        slot_attn = BgSepSlotAttention if \
+            self.use_bg_sep_slot else SlotAttention
+        # slot_attn = ObjBgSepSlotAttention if \
+        #     self.use_bg_sep_slot else ObjSlotAttention
         self.slot_attention = slot_attn(
             in_features=self.out_features,
             num_iterations=self.num_iterations,

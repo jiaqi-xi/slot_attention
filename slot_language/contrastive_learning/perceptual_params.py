@@ -79,4 +79,4 @@ class SlotAttentionParams:
 
     # perceptual learning
     perceptual_loss_w: float = 1.0
-    perceptual_arch: str = 'alex'
+    perceptual_arch: str = 'alex'  # 'vgg' is too memory consumption
