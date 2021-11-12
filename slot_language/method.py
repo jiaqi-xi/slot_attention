@@ -127,7 +127,7 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
             'val_loss': avg_recon_loss,
             'val_recon_loss': avg_recon_loss,
         }
-        if self.model.use_entropy_loss:
+        if 'entropy' in outputs[0].keys():
             avg_entropy = torch.stack([x['entropy'] for x in outputs]).mean()
             logs['val_entropy'] = avg_entropy
             logs['val_loss'] += avg_entropy * self.entropy_loss_w
