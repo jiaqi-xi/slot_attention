@@ -8,7 +8,6 @@ import torch.nn.functional as F
 sys.path.append('../')
 
 from model import SlotAttentionModel
-import numpy as np
 import lpips
 
 
@@ -44,23 +43,14 @@ class PerceptualSlotAttentionModel(nn.Module):
 
     def __init__(self,
                  model: SlotAttentionModel,
-                 dim: int = 64):
+                 dim: int = 64,
+                 arch: str = 'vgg'):
         super().__init__()
 
         self.dim = dim
-        self.T = T
-
-        # projection head
-        self.mlp = (mlp is not None and len(mlp) > 0)
-        if self.mlp:
-            assert isinstance(mlp, (list, tuple))
-            assert mlp[-1] == self.dim
-            model.proj_head = build_mlps(
-                model.slot_size, mlp[:-1], mlp[-1], use_bn=False)
-            print('Using MLP projection head in perceptual learning!')
-
+        self.arch = arch
         self.model = model
-        self.perceptual_loss = PerceptualLoss()
+        self.perceptual_loss = PerceptualLoss(arch)
         self.num_slots = self.model.num_slots
 
     def forward_test(self, data):
@@ -87,24 +77,6 @@ class PerceptualSlotAttentionModel(nn.Module):
 
         return recon_combined, recons, masks, slots, None, None
 
-    def _build_n_pair(self, feats):
-        """Construct anchor, positive and negatives for N-pair loss"""
-        # [2, B, num_slots, dim]
-        feats = feats.view(2, -1, self.num_slots, self.dim)
-
-        # `anchors` is of shape [B * num_slots, dim]
-        anchors = feats[0].view(-1, self.dim)
-        # `positives` is of shape [B * num_slots, dim]
-        positives = feats[1].view(-1, self.dim)
-        # `negatives` is of shape [B * num_slots, 2*(num_slots-1), dim]
-        negatives = []
-        for slot_idx in range(self.num_slots):
-            negatives.append(  # each is of shape [B, 2*(num_slots-1), dim]
-                torch.cat([feats[:, :, :slot_idx], feats[:, :, slot_idx + 1:]],
-                          dim=2).transpose(0, 1).flatten(1, 2))
-        negatives = torch.stack(negatives, dim=1).flatten(0, 1)
-        return anchors, positives, negatives
-
     def loss_function(self, input):
         """Calculate reconstruction loss and contrastive loss."""
         if not self.training:
@@ -117,11 +89,11 @@ class PerceptualSlotAttentionModel(nn.Module):
             recon_combined, recons, masks, _, _, _ = self.forward(input)
             img = torch.cat([input['img'], input['img2']], dim=0)
             recon_loss = F.mse_loss(recon_combined, img)
-            recon_1, recon_2 = np.split(recons, 2, axis=0)
-            mask_1, mask_2 = np.split(masks, 2, axis=0)
+            recon_1, recon_2 = torch.split(recons, 2, axis=0)
+            mask_1, mask_2 = torch.split(masks, 2, axis=0)
             x_1 = mask_1 * recon_1 + (1 - mask_1)
             x_2 = mask_2 * recon_2 + (1 - mask_2)
-            perceptual_loss = self.perceptual_loss.loss_function(x_1, x_2)
+            perceptual_loss = self.perceptual_loss.loss_function(x_1.flatten(0,1), x_2.flatten(0,1))
             loss_dict = {
                 'recon_loss': recon_loss,
                 'perceptual_loss': perceptual_loss,
@@ -133,27 +105,3 @@ class PerceptualSlotAttentionModel(nn.Module):
             entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
             loss_dict['entropy'] = entropy_loss
         return loss_dict
-
-
-def fc_bn_relu(in_dim, out_dim, use_bn):
-    if use_bn:
-        return nn.Sequential(
-            nn.Linear(in_dim, out_dim, bias=False),
-            nn.BatchNorm1d(out_dim),
-            nn.ReLU(),
-        )
-    return nn.Sequential(
-        nn.Linear(in_dim, out_dim, bias=True),
-        nn.ReLU(),
-    )
-
-
-def build_mlps(in_channels, hidden_sizes, out_channels, use_bn):
-    if hidden_sizes is None or len(hidden_sizes) == 0:
-        return nn.Linear(in_channels, out_channels)
-    modules = [fc_bn_relu(in_channels, hidden_sizes[0], use_bn=use_bn)]
-    for i in range(0, len(hidden_sizes) - 1):
-        modules.append(
-            fc_bn_relu(hidden_sizes[i], hidden_sizes[i + 1], use_bn=use_bn))
-    modules.append(nn.Linear(hidden_sizes[-1], out_channels))
-    return nn.Sequential(*modules)

@@ -24,7 +24,8 @@ def build_perceptual_slot_attention_model(params: SlotAttentionParams):
     model = build_slot_attention_model(params)
     model = PerceptualSlotAttentionModel(
         model,
-        params.slot_size)
+        params.slot_size,
+        arch=params.arch)
     return model
 
 
