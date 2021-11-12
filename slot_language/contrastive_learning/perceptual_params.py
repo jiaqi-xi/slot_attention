@@ -48,7 +48,7 @@ class SlotAttentionParams:
     text2slot_mlp_layers: int = 2
 
     # data
-    data_root: str = "/scratch/ssd004/scratch/jiaqixi/data/clevr_video/train/"
+    data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
     # whether load different text for different video period

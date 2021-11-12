@@ -47,7 +47,7 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     clip_transforms = build_data_transforms(params)
 
-    model = build_slot_attention_model(params)
+    model = build_aug_slot_attention_model(params)
 
     clevr_datamodule = ObjAugCLEVRVisionLanguageCLIPDataModule(
         data_root=params.data_root,

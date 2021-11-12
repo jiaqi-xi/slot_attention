@@ -1,12 +1,14 @@
 import sys
 import cv2
-import clip
+import copy
 import numpy as np
 from PIL import Image
 from typing import Callable, Tuple
 from typing import Optional
 import torch
 import torchvision.transforms.functional as TF
+
+import clip
 
 sys.path.append('../')
 
@@ -305,6 +307,8 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
             if self.shuffle_obj:
                 np.random.shuffle(idx)
                 shuffled_texts = [texts[i] for i in idx]
+            else:
+                shuffled_texts = copy.deepcopy(texts)
             return texts, shuffled_texts, idx
         return texts
 

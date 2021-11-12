@@ -8,10 +8,11 @@ from obj_model import ObjSlotAttentionModel
 
 class ObjAugSlotAttentionModel(nn.Module):
 
-    def __init__(self, model: ObjSlotAttentionModel):
+    def __init__(self, model: ObjSlotAttentionModel, eps: float = 1e-6):
         super().__init__()
 
         self.model = model
+        self.eps = eps
 
     def forward_test(self, data):
         return self.model(
@@ -33,7 +34,8 @@ class ObjAugSlotAttentionModel(nn.Module):
         if not self.training:
             return self.forward_test(data)
 
-        assert data['is_flipped'] or data['is_shuffled']
+        # at least one augmentation is applied
+        assert data['is_flipped'][0].item() or data['is_shuffled'][0].item()
         x = dict(
             img=torch.cat([data['img'], data['flipped_img']], dim=0),
             text=torch.cat([data['text'], data['shuffled_text']], dim=0),
@@ -63,8 +65,10 @@ class ObjAugSlotAttentionModel(nn.Module):
             "recon_loss": recon_loss,
         }
         masks = masks[:, :, 0]  # [2*B, num_slots, H, W]
+        masks = masks + self.eps
+        masks = masks / masks.sum(dim=1, keepdim=True)
         if self.model.use_entropy_loss:
-            entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
+            entropy_loss = (-masks * torch.log(masks)).sum(1).mean()
             loss_dict['entropy'] = entropy_loss
 
         # Equivariance loss
@@ -72,9 +76,10 @@ class ObjAugSlotAttentionModel(nn.Module):
         bs = padding.shape[0]
         obj_mask = (padding == 1)
         masks1, masks2 = masks[:bs], masks[bs:]  # [B, num_slots, H, W]
-        if input['is_flipped']:
+        if input['is_flipped'][0].item():
             masks2 = TF.hflip(masks2)
-        if not input['is_shuffled']:  # we only penalize foreground obj masks
+        # we only penalize foreground obj masks
+        if not input['is_shuffled'][0].item():
             masks1, masks2 = masks1[obj_mask], masks2[obj_mask]  # [M, H, W]
         else:
             shuffled_idx = input['shuffled_idx'].long()  # [B, num_slots]
@@ -85,8 +90,7 @@ class ObjAugSlotAttentionModel(nn.Module):
                                dim=0)
             masks2 = masks2[obj_mask]
         # masks are probability tensors, however torch.kld requires log-prob
-        eps = 1e-6
-        equivariance_loss = F.kl_div(torch.log(masks1 + eps), masks2) + \
-            F.kl_div(torch.log(masks2 + eps), masks1)
+        equivariance_loss = F.kl_div(torch.log(masks1), masks2) + \
+            F.kl_div(torch.log(masks2), masks1)
         loss_dict['equivariance_loss'] = equivariance_loss
         return loss_dict
