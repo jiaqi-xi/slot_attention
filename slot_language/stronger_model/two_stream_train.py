@@ -9,20 +9,51 @@ import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from metric_train import build_data_module
-from perceptual_model import PerceptualSlotAttentionModel
-from perceptual_method import PerceptualSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from perceptual_params import SlotAttentionParams
+import clip
+from two_stream_method import TwoStreamSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from two_stream_model import TwoStreamSlotAttentionModel
+from two_stream_params import SlotAttentionParams
+from unet_train import build_text2slot_model, build_data_module, process_ckp
 
 sys.path.append('../')
 
-from train import build_slot_attention_model, process_ckp
-from utils import VideoLogCallback, ImageLogCallback
+from utils import VideoLogCallback, TwoStreamImageLogCallback
 
 
-def build_perceptual_slot_attention_model(params: SlotAttentionParams):
-    model = build_slot_attention_model(params)
-    model = PerceptualSlotAttentionModel(model, arch=params.perceptual_arch)
+def build_slot_attention_model(params: SlotAttentionParams):
+    clip_model, _ = clip.load(params.clip_arch)
+    text2slot_model = build_text2slot_model(params)
+    text2slot_model_conv = build_text2slot_model(params)
+    model = TwoStreamSlotAttentionModel(
+        clip_model=clip_model,
+        use_clip_vision=params.use_clip_vision,
+        use_clip_text=params.use_text2slot,
+        text2slot_model=text2slot_model,
+        text2slot_model_conv=text2slot_model_conv,
+        resolution=params.resolution,
+        num_slots=params.num_slots,
+        num_iterations=params.num_iterations,
+        slot_size=params.slot_size,
+        slot_mlp_size=params.slot_mlp_size,
+        kernel_size=params.kernel_size,
+        enc_channels=params.enc_channels,
+        dec_channels=params.dec_channels,
+        enc_pos_enc=params.enc_pos_enc,
+        enc_pos_enc_conv=params.enc_pos_enc_conv,
+        dec_pos_enc=params.dec_pos_enc,
+        dec_resolution=params.dec_resolution,
+        spread_hard_mask=params.spread_hard_mask,
+        finetune_mask=params.finetune_mask,
+        use_maxpool=params.use_maxpool,
+        use_bn=params.use_bn,
+        use_word_set=params.use_text2slot
+        and params.text2slot_arch in ['Transformer', 'DETR'],
+        use_padding_mask=params.use_text2slot
+        and params.text2slot_arch in ['Transformer', 'DETR']
+        and params.text2slot_padding_mask,
+        use_entropy_loss=params.use_entropy_loss,
+        use_bg_sep_slot=params.use_bg_sep_slot,
+    )
     return model
 
 
@@ -45,7 +76,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         if args.weight:
             print(f'INFO: loading checkpoint {args.weight}')
 
-    model = build_perceptual_slot_attention_model(params)
+    model = build_slot_attention_model(params)
 
     clevr_datamodule = build_data_module(params)
 
@@ -98,7 +129,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         val_check_interval=args.eval_interval,
         callbacks=[
             LearningRateMonitor("step"),
-            ImageLogCallback(),
+            TwoStreamImageLogCallback(),
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],

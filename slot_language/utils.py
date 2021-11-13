@@ -72,6 +72,26 @@ class ImageLogCallback(Callback):
                     commit=False)
 
 
+class TwoStreamImageLogCallback(Callback):
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        """Called when the train epoch ends."""
+
+        if trainer.logger:
+            with torch.no_grad():
+                pl_module.eval()
+                images, masks, coarse_masks = pl_module.sample_images()
+                trainer.logger.experiment.log(
+                    {
+                        "images": [
+                            wandb.Image(images),
+                            wandb.Image(masks),
+                            wandb.Image(coarse_masks)
+                        ]
+                    },
+                    commit=False)
+
+
 class VideoLogCallback(Callback):
 
     def on_validation_epoch_end(self, trainer, pl_module):

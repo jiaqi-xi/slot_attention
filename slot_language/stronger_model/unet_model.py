@@ -91,6 +91,8 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         if self.enc_pos_enc:
             self.encoder_pos_embedding = SoftPositionEmbed(
                 3, self.out_features, self.enc_resolution)
+        else:
+            self.encoder_pos_embedding = None
         self.encoder_out_layer = nn.Sequential(
             nn.Linear(self.out_features, self.out_features),
             nn.ReLU(),

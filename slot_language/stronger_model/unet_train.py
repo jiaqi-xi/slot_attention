@@ -15,9 +15,8 @@ from unet_params import SlotAttentionParams
 
 sys.path.append('../')
 
-from train import build_text2slot_model, build_data_transforms, process_ckp
+from train import build_text2slot_model, build_data_module, process_ckp
 from utils import VideoLogCallback, ImageLogCallback
-from data import CLEVRVisionLanguageCLIPDataModule
 from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
 
 
@@ -74,24 +73,9 @@ def main(params: Optional[SlotAttentionParams] = None):
         if args.weight:
             print(f'INFO: loading checkpoint {args.weight}')
 
-    clip_transforms = build_data_transforms(params)
-
     model = build_slot_attention_model(params)
 
-    clevr_datamodule = CLEVRVisionLanguageCLIPDataModule(
-        data_root=params.data_root,
-        train_batch_size=params.batch_size,
-        val_batch_size=params.val_batch_size,
-        clip_transforms=clip_transforms,
-        max_n_objects=params.num_slots - 1,
-        num_workers=params.num_workers,
-        num_train_images=params.num_train_images,
-        num_val_images=params.num_val_images,
-        fine_grained=params.fine_grained,
-        object_only=params.object_only,
-        overfit=params.overfit,
-        separater=params.separater,
-    )
+    clevr_datamodule = build_data_module(params)
 
     print('Not using max_object_num constraint here!')
 

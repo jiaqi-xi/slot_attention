@@ -24,12 +24,10 @@ class ObjAugSlotAttentionVideoLanguageMethod(
 
     def training_step(self, batch, batch_idx, optimizer_idx=0):
         train_loss = self.model.loss_function(batch)
-        loss = train_loss['recon_loss']
+        loss = train_loss['recon_loss'] + \
+            train_loss['equivariance_loss'] * self.equivariance_loss_w
         if 'entropy' in train_loss.keys():
             loss = loss + train_loss['entropy'] * self.entropy_loss_w
-        if 'equivariance' in train_loss.keys():
-            loss = loss + \
-                train_loss['equivariance_loss'] * self.equivariance_loss_w
         train_loss['loss'] = loss
         logs = {key: val.item() for key, val in train_loss.items()}
         # record training time
