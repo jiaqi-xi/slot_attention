@@ -19,7 +19,7 @@ sys.path.append('../')
 
 from train import build_data_transforms, process_ckp
 from text_model import ObjMLPText2Slot
-from utils import VideoLogCallback, ImageLogCallback
+from utils import VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
 
 sys.path.append('../viewpoint_dataset/')
 

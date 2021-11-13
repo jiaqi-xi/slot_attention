@@ -9,17 +9,14 @@ import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from obj_train import build_slot_attention_model, build_data_transforms, process_ckp
+from obj_train import build_slot_attention_model, build_data_transforms, \
+    process_ckp, VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
 from obj_data import ObjAugCLEVRVisionLanguageCLIPDataModule
 from pos_train import build_slot_attention_model as build_pos_slot_attention_model
 from unet_train import build_slot_attention_model as build_unet_slot_attention_model
 from aug_method import ObjAugSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from aug_model import ObjAugSlotAttentionModel
 from aug_params import SlotAttentionParams
-
-sys.path.append('../')
-
-from utils import VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
 
 
 def build_aug_slot_attention_model(params: SlotAttentionParams):
