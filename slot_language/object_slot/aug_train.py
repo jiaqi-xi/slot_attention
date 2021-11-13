@@ -12,6 +12,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from obj_train import build_slot_attention_model, build_data_transforms, process_ckp
 from obj_data import ObjAugCLEVRVisionLanguageCLIPDataModule
 from pos_train import build_slot_attention_model as build_pos_slot_attention_model
+from unet_train import build_slot_attention_model as build_unet_slot_attention_model
 from aug_method import ObjAugSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from aug_model import ObjAugSlotAttentionModel
 from aug_params import SlotAttentionParams
@@ -23,8 +24,13 @@ from utils import VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
 
 def build_aug_slot_attention_model(params: SlotAttentionParams):
     if params.use_pos_slot_model:
+        print('Using PosSlotAttentionModel!')
         model = build_pos_slot_attention_model(params)
+    elif params.use_unet_slot_model:
+        print('Using UNetSlotAttentionModel!')
+        model = build_unet_slot_attention_model(params)
     else:
+        print('Using ObjSlotAttentionModel!')
         model = build_slot_attention_model(params)
     model = ObjAugSlotAttentionModel(model=model)
     return model

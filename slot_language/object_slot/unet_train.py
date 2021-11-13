@@ -9,17 +9,17 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
-from obj_train import build_data_module, build_text2slot_model, process_ckp, \
-    VideoLogCallback, PosSlotImageLogCallback
-from pos_method import ObjPosSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from pos_model import ObjPosSlotAttentionModel
-from pos_params import SlotAttentionParams
+from obj_train import build_data_module, process_ckp, build_text2slot_model, \
+    VideoLogCallback, ImageLogCallback
+from obj_method import ObjSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from unet_model import UNetSlotAttentionModel
+from unet_params import SlotAttentionParams
 
 
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
-    model = ObjPosSlotAttentionModel(
+    model = UNetSlotAttentionModel(
         clip_model=clip_model,
         use_clip_vision=params.use_clip_vision,
         use_clip_text=params.use_text2slot,
@@ -27,15 +27,13 @@ def build_slot_attention_model(params: SlotAttentionParams):
         resolution=params.resolution,
         num_slots=params.num_slots,
         num_iterations=params.num_iterations,
-        enc_resolution=params.enc_resolution,
-        num_pos_slot=params.num_pos_slot,
-        enc_channels=params.clip_vision_channel,
-        enc_pos_enc=params.enc_pos_enc,
         slot_size=params.slot_size,
-        dec_kernel_size=params.dec_kernel_size,
-        dec_hidden_dims=params.dec_channels,
-        dec_resolution=params.dec_resolution,
         slot_mlp_size=params.slot_mlp_size,
+        kernel_size=params.kernel_size,
+        enc_channels=params.enc_channels,
+        dec_channels=params.dec_channels,
+        enc_pos_enc=params.enc_pos_enc,
+        dec_resolution=params.dec_resolution,
         use_entropy_loss=params.use_entropy_loss,
         use_bg_sep_slot=params.use_bg_sep_slot,
     )
@@ -112,7 +110,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         val_check_interval=args.eval_interval,
         callbacks=[
             LearningRateMonitor("step"),
-            PosSlotImageLogCallback(),
+            ImageLogCallback(),
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],

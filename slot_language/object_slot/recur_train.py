@@ -11,16 +11,12 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
-from obj_train import build_text2slot_model
+from obj_train import build_text2slot_model, build_data_transforms, \
+    process_ckp, VideoLogCallback, ImageLogCallback
 from obj_data import ObjRecurCLEVRVisionLanguageCLIPDataModule
 from recur_method import ObjRecurSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from recur_model import ObjRecurSlotAttentionModel
 from recur_params import SlotAttentionParams
-
-sys.path.append('../')
-
-from train import build_data_transforms, process_ckp
-from utils import VideoLogCallback, ImageLogCallback
 
 sys.path.append('../viewpoint_dataset/')
 
