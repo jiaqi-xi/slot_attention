@@ -10,16 +10,14 @@ from utils import Tensor, to_rgb_from_tensor
 
 class SlotAttentionVideoLanguageMethod(pl.LightningModule):
 
-    def __init__(self,
-                 model: SlotAttentionModel,
+    def __init__(self, model: SlotAttentionModel,
                  datamodule: pl.LightningDataModule,
-                 params: SlotAttentionParams,
-                 entropy_loss_w: float = 0.0):
+                 params: SlotAttentionParams):
         super().__init__()
         self.model = model
         self.datamodule = datamodule
         self.params = params
-        self.entropy_loss_w = entropy_loss_w
+        self.entropy_loss_w = params.entropy_loss_w
 
     def forward(self, input: Tensor, **kwargs) -> Tensor:
         return self.model(input, **kwargs)

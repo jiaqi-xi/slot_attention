@@ -26,6 +26,22 @@ sys.path.append('../viewpoint_dataset/')
 from viewpoint_data import ObjCLEVRVisionLanguageViewpointDataModule
 
 
+def build_data_module(params: SlotAttentionParams):
+    clip_transforms = build_data_transforms(params)
+    data_module = ObjCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
+        params.data_root else ObjCLEVRVisionLanguageCLIPDataModule
+    clevr_datamodule = data_module(
+        data_root=params.data_root,
+        train_batch_size=params.batch_size,
+        val_batch_size=params.val_batch_size,
+        clip_transforms=clip_transforms,
+        num_workers=params.num_workers,
+        max_n_objects=params.num_slots - 1,
+        shuffle_obj=params.shuffle_obj,
+    )
+    return clevr_datamodule
+
+
 def build_text2slot_model(params: SlotAttentionParams):
     if not params.use_text2slot:
         text2slot_model = None
@@ -82,27 +98,12 @@ def main(params: Optional[SlotAttentionParams] = None):
         if args.weight:
             print(f'INFO: loading checkpoint {args.weight}')
 
-    clip_transforms = build_data_transforms(params)
-
     model = build_slot_attention_model(params)
 
-    data_module = ObjCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
-        params.data_root else ObjCLEVRVisionLanguageCLIPDataModule
-    clevr_datamodule = data_module(
-        data_root=params.data_root,
-        train_batch_size=params.batch_size,
-        val_batch_size=params.val_batch_size,
-        clip_transforms=clip_transforms,
-        num_workers=params.num_workers,
-        max_n_objects=params.num_slots - 1,
-        shuffle_obj=params.shuffle_obj,
-    )
+    clevr_datamodule = build_data_module(params)
 
     method = SlotAttentionMethod(
-        model=model,
-        datamodule=clevr_datamodule,
-        params=params,
-        entropy_loss_w=params.entropy_loss_w)
+        model=model, datamodule=clevr_datamodule, params=params)
 
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params

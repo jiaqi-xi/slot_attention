@@ -226,7 +226,7 @@ class UNet(nn.Module):
         feats = self.encoder(x)
         out = self.decoder(feats)
         if return_feats:
-            return out, feats
+            return out, feats[-1]
         return out
 
 
