@@ -96,13 +96,13 @@ class TwoStreamSlotAttentionModel(UNetSlotAttentionModel):
             nn.Linear(self.out_features, self.out_features),
         )
 
-        slot_attn = BgSepSlotAttention if use_bg_sep_slot else SlotAttention
+        slot_attn = BgSepSlotAttention if self.use_bg_sep_slot else SlotAttention
         self.slot_attention_conv = slot_attn(
             in_features=self.out_features,
-            num_iterations=num_iterations,
-            num_slots=num_slots,
-            slot_size=slot_size,
-            mlp_hidden_size=slot_mlp_size,
+            num_iterations=self.num_iterations,
+            num_slots=self.num_slots,
+            slot_size=self.slot_size,
+            mlp_hidden_size=self.slot_mlp_size,
         )
 
     def _build_decoder(self, channels, kernel_size):
@@ -244,3 +244,69 @@ class TwoStreamSlotAttentionModel(UNetSlotAttentionModel):
     @property
     def dtype(self):
         return self.out_conv.weight.dtype
+
+
+class MaskFormerSlotAttentionModel(TwoStreamSlotAttentionModel):
+    """CLIP + Slot Attention with UNet like structure.
+    UNet's downsample and upsample lead to stronger representation capacity.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # building the second stream that outputs Conv kernels with features
+        down_scale = 2**(len(self.enc_channels) - 1)
+        feats_res = (self.enc_resolution[0] // down_scale,
+                     self.enc_resolution[1] // down_scale)
+        if self.enc_pos_enc_conv:
+            self.encoder_pos_embedding_conv = SoftPositionEmbed(
+                3, self.enc_channels[-1], feats_res)
+        else:
+            self.encoder_pos_embedding_conv = None
+
+        self.encoder_out_layer_conv = nn.Sequential(
+            nn.Linear(self.enc_channels[-1], self.enc_channels[-1]),
+            nn.ReLU(),
+            nn.Linear(self.enc_channels[-1], self.enc_channels[-1]),
+        )
+
+        slot_attn = BgSepSlotAttention if self.use_bg_sep_slot else SlotAttention
+        self.slot_attention_conv = slot_attn(
+            in_features=self.enc_channels[-1],
+            num_iterations=self.num_iterations,
+            num_slots=self.num_slots,
+            slot_size=self.slot_size,
+            mlp_hidden_size=self.slot_mlp_size,
+        )
+
+    def _get_encoder_out(self, img):
+        """Encode image, potentially add pos enc, apply MLP."""
+        assert not self.use_clip_vision
+        encoder_out, inter_feats = self.encoder(img, return_feats=True)
+        return encoder_out, inter_feats
+
+    def encode(self, x):
+        """Encode from img to slots."""
+        img, text = x['img'], x['text']
+
+        # encoder_out is of shape [B, C, H, W]
+        encoder_out, inter_feats = self._get_encoder_out(img)
+        img_features = self._get_visual_features(encoder_out,
+                                                 self.encoder_pos_embedding,
+                                                 self.encoder_out_layer)
+        img_features_conv = self._get_visual_features(
+            inter_feats, self.encoder_pos_embedding_conv,
+            self.encoder_out_layer_conv)
+
+        # slot initialization
+        text_features = self._encode_text_feature(text)
+        slot_mu, slot_log_sigma = self._get_slot_embedding(
+            text_features, self.text2slot_model)
+        slot_mu_conv, slot_log_sigma_conv = self._get_slot_embedding(
+            text_features, self.text2slot_model_conv)
+
+        # (batch_size, self.num_slots, self.slot_size)
+        slots = self.slot_attention(img_features, slot_mu, slot_log_sigma)
+        slots_conv = self.slot_attention_conv(img_features_conv, slot_mu_conv,
+                                              slot_log_sigma_conv)
+        return encoder_out, slots, slots_conv

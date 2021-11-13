@@ -133,6 +133,7 @@ def main(params: Optional[SlotAttentionParams] = None):
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
+        profiler='simple',
         precision=16 if args.fp16 else 32,
         weights_save_path=ckp_path,
     )

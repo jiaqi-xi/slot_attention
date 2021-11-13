@@ -28,6 +28,7 @@ class SlotAttentionParams:
     use_bg_sep_slot: bool = False
 
     # conv stream params
+    maskformer_model: bool = False
     enc_pos_enc_conv: bool = True
     dec_pos_enc: bool = True
     spread_hard_mask: bool = False

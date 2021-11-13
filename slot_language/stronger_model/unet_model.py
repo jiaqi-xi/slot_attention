@@ -47,6 +47,11 @@ class UNetSlotAttentionModel(SlotAttentionModel):
     ):
         nn.Module.__init__(self)
         self.resolution = resolution
+        self.num_slots = num_slots
+        self.num_iterations = num_iterations
+        self.slot_size = slot_size
+        self.slot_mlp_size = slot_mlp_size
+        self.enc_channels = enc_channels
         self.enc_pos_enc = enc_pos_enc
         self.enc_resolution = resolution
         self.dec_resolution = dec_resolution

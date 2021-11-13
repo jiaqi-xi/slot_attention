@@ -222,9 +222,11 @@ class UNet(nn.Module):
             use_bilinear=use_bilinear,
             use_bn=use_bn)
 
-    def forward(self, x):
+    def forward(self, x, return_feats=False):
         feats = self.encoder(x)
         out = self.decoder(feats)
+        if return_feats:
+            return out, feats
         return out
 
 

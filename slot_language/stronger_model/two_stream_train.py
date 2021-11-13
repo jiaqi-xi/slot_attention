@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
 from two_stream_method import TwoStreamSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from two_stream_model import TwoStreamSlotAttentionModel
+from two_stream_model import TwoStreamSlotAttentionModel, MaskFormerSlotAttentionModel
 from two_stream_params import SlotAttentionParams
 from unet_train import build_text2slot_model, build_data_module, process_ckp
 
@@ -24,7 +24,10 @@ def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
     text2slot_model_conv = build_text2slot_model(params)
-    model = TwoStreamSlotAttentionModel(
+    model = TwoStreamSlotAttentionModel if not \
+        hasattr(params, 'maskformer_model') or \
+        not params.maskformer_model else MaskFormerSlotAttentionModel
+    model = model(
         clip_model=clip_model,
         use_clip_vision=params.use_clip_vision,
         use_clip_text=params.use_text2slot,
@@ -133,6 +136,7 @@ def main(params: Optional[SlotAttentionParams] = None):
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
+        profiler='simple',
         precision=16 if args.fp16 else 32,
         weights_save_path=ckp_path,
     )
