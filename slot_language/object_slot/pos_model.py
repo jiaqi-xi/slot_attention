@@ -54,6 +54,7 @@ class ObjPosSlotAttentionModel(ObjSlotAttentionModel):
             use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot)
 
+        self.slot_attention.num_slots *= num_pos_slot
         self.num_pos_slot = num_pos_slot
         self.pos_slot_emb = nn.Embedding(num_slots * num_pos_slot, slot_size)
         nn.init.xavier_uniform_(
@@ -108,7 +109,8 @@ class ObjPosSlotAttentionModel(ObjSlotAttentionModel):
         recons = (recons * pos_masks).sum(2)  # [B, num_slots, C, H, W]
         # masks = (masks * pos_masks).sum(2)  # [B, num_slots, 1, H, W]
         # masks = F.softmax(masks, dim=1)
-        all_slots_masks = F.softmax(masks.flatten(1, 2), dim=1).view(masks.shape)
+        all_slots_masks = F.softmax(
+            masks.flatten(1, 2), dim=1).view(masks.shape)
         masks = all_slots_masks.sum(2)
         recon_combined = torch.sum(recons * masks, dim=1)
         return recon_combined, recons, masks, all_slots_masks

@@ -24,7 +24,7 @@ class SlotAttentionParams:
     # whether treat bg slot separately
     use_bg_sep_slot: bool = False
     # number of pos emb for each slot
-    num_pos_slot: int = 5
+    num_pos_slot: int = 4
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
@@ -50,8 +50,8 @@ class SlotAttentionParams:
     # training settings
     gpus: int = 1
     lr: float = 0.0004
-    batch_size: int = 64
-    val_batch_size: int = 64
+    batch_size: int = 42
+    val_batch_size: int = 42
     max_epochs: int = 8
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5

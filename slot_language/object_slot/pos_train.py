@@ -17,7 +17,7 @@ from pos_params import SlotAttentionParams
 
 sys.path.append('../')
 
-from utils import VideoLogCallback, ImageLogCallback
+from utils import VideoLogCallback, PosSlotImageLogCallback
 
 
 def build_slot_attention_model(params: SlotAttentionParams):
@@ -116,7 +116,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         val_check_interval=args.eval_interval,
         callbacks=[
             LearningRateMonitor("step"),
-            ImageLogCallback(),
+            PosSlotImageLogCallback(),
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
