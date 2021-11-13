@@ -11,17 +11,21 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 from obj_train import build_slot_attention_model, build_data_transforms, process_ckp
 from obj_data import ObjAugCLEVRVisionLanguageCLIPDataModule
+from pos_train import build_slot_attention_model as build_pos_slot_attention_model
 from aug_method import ObjAugSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from aug_model import ObjAugSlotAttentionModel
 from aug_params import SlotAttentionParams
 
 sys.path.append('../')
 
-from utils import VideoLogCallback, ImageLogCallback
+from utils import VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
 
 
 def build_aug_slot_attention_model(params: SlotAttentionParams):
-    model = build_slot_attention_model(params)
+    if params.use_pos_slot_model:
+        model = build_pos_slot_attention_model(params)
+    else:
+        model = build_slot_attention_model(params)
     model = ObjAugSlotAttentionModel(model=model)
     return model
 
@@ -61,9 +65,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     )
 
     method = SlotAttentionMethod(
-        model=model,
-        datamodule=clevr_datamodule,
-        params=params)
+        model=model, datamodule=clevr_datamodule, params=params)
 
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params
@@ -109,7 +111,8 @@ def main(params: Optional[SlotAttentionParams] = None):
         val_check_interval=args.eval_interval,
         callbacks=[
             LearningRateMonitor("step"),
-            ImageLogCallback(),
+            PosSlotImageLogCallback()
+            if params.use_pos_slot_model else ImageLogCallback(),
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],

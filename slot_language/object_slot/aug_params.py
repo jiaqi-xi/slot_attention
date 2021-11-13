@@ -24,6 +24,9 @@ class SlotAttentionParams:
     equivariance_loss_w: float = 1.0
     # whether treat bg slot separately
     use_bg_sep_slot: bool = False
+    # whether use pos slot attention model
+    use_pos_slot_model: bool = False
+    num_pos_slot: int = 4
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
