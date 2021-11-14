@@ -28,6 +28,7 @@ class SlotAttentionParams:
     # whether use pos slot attention model
     use_pos_slot_model: bool = False
     num_pos_slot: int = 4
+    share_pos_slot: bool = False
 
     # whether use unet slot attention model
     use_unet_slot_model: bool = False

@@ -29,6 +29,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
         num_iterations=params.num_iterations,
         enc_resolution=params.enc_resolution,
         num_pos_slot=params.num_pos_slot,
+        share_pos_slot=params.share_pos_slot,
         enc_channels=params.clip_vision_channel,
         enc_pos_enc=params.enc_pos_enc,
         slot_size=params.slot_size,

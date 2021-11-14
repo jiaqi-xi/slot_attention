@@ -12,31 +12,53 @@ import clip
 from obj_train import build_data_module, process_ckp, build_text2slot_model, \
     VideoLogCallback, ImageLogCallback
 from obj_method import ObjSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from unet_model import UNetSlotAttentionModel
+from unet_model import UNetSlotAttentionModel, PosUNetSlotAttentionModel
 from unet_params import SlotAttentionParams
 
 
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
-    model = UNetSlotAttentionModel(
-        clip_model=clip_model,
-        use_clip_vision=params.use_clip_vision,
-        use_clip_text=params.use_text2slot,
-        text2slot_model=text2slot_model,
-        resolution=params.resolution,
-        num_slots=params.num_slots,
-        num_iterations=params.num_iterations,
-        slot_size=params.slot_size,
-        slot_mlp_size=params.slot_mlp_size,
-        kernel_size=params.kernel_size,
-        enc_channels=params.enc_channels,
-        dec_channels=params.dec_channels,
-        enc_pos_enc=params.enc_pos_enc,
-        dec_resolution=params.dec_resolution,
-        use_entropy_loss=params.use_entropy_loss,
-        use_bg_sep_slot=params.use_bg_sep_slot,
-    )
+    if params.use_slot_pos_emb:
+        model = PosUNetSlotAttentionModel(
+            clip_model=clip_model,
+            use_clip_vision=params.use_clip_vision,
+            use_clip_text=params.use_text2slot,
+            text2slot_model=text2slot_model,
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            num_pos_slot=params.num_pos_slot,
+            share_pos_slot=params.share_pos_slot,
+            slot_size=params.slot_size,
+            slot_mlp_size=params.slot_mlp_size,
+            kernel_size=params.kernel_size,
+            enc_channels=params.enc_channels,
+            dec_channels=params.dec_channels,
+            enc_pos_enc=params.enc_pos_enc,
+            dec_resolution=params.dec_resolution,
+            use_entropy_loss=params.use_entropy_loss,
+            use_bg_sep_slot=params.use_bg_sep_slot,
+        )
+    else:
+        model = UNetSlotAttentionModel(
+            clip_model=clip_model,
+            use_clip_vision=params.use_clip_vision,
+            use_clip_text=params.use_text2slot,
+            text2slot_model=text2slot_model,
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            slot_size=params.slot_size,
+            slot_mlp_size=params.slot_mlp_size,
+            kernel_size=params.kernel_size,
+            enc_channels=params.enc_channels,
+            dec_channels=params.dec_channels,
+            enc_pos_enc=params.enc_pos_enc,
+            dec_resolution=params.dec_resolution,
+            use_entropy_loss=params.use_entropy_loss,
+            use_bg_sep_slot=params.use_bg_sep_slot,
+        )
     return model
 
 

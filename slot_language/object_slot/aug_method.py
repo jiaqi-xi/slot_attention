@@ -82,7 +82,7 @@ class ObjAugSlotAttentionVideoLanguageMethod(
             nrow=masks.shape[1],
         )  # [C, B*H, num_slots*W]
 
-        if isinstance(self.model, ObjPosSlotAttentionModel):
+        if isinstance(self.model.model, ObjPosSlotAttentionModel):
             all_masks = slots
             all_masks = torch.cat([all_masks] * C, dim=3)
             all_masks = all_masks.transpose(2, 1).flatten(0, 1)

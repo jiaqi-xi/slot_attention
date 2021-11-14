@@ -24,6 +24,11 @@ class SlotAttentionParams:
     # whether treat bg slot separately
     use_bg_sep_slot: bool = False
 
+    # pos emb for each slot
+    use_slot_pos_emb: bool = False
+    num_pos_slot: int = 4
+    share_pos_slot: bool = True  # slots share the same positional embedding!
+
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
     clip_arch: str = 'ViT-B/32'

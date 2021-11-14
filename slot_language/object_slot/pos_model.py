@@ -22,6 +22,7 @@ class ObjPosSlotAttentionModel(ObjSlotAttentionModel):
             num_iterations: int,
             enc_resolution: Tuple[int, int] = (128, 128),
             num_pos_slot: int = 5,  # number of pos enc for each slot
+            share_pos_slot: bool = True,
             enc_channels: int = 3,
             enc_pos_enc: bool = False,
             slot_size: int = 64,
@@ -56,7 +57,9 @@ class ObjPosSlotAttentionModel(ObjSlotAttentionModel):
 
         self.slot_attention.num_slots *= num_pos_slot
         self.num_pos_slot = num_pos_slot
-        self.pos_slot_emb = nn.Embedding(num_slots * num_pos_slot, slot_size)
+        self.share_pos_slot = share_pos_slot
+        num_embs = num_pos_slot if share_pos_slot else num_slots * num_pos_slot
+        self.pos_slot_emb = nn.Embedding(num_embs, slot_size)
         nn.init.xavier_uniform_(
             self.pos_slot_emb.weight, gain=nn.init.calculate_gain("linear"))
         self.slot_proj = nn.Linear(2 * slot_size, slot_size, bias=True)
@@ -74,7 +77,11 @@ class ObjPosSlotAttentionModel(ObjSlotAttentionModel):
         # concat text_slots with pos_slot_emb
         text_slots = text_slots.unsqueeze(2).\
             repeat(1, 1, self.num_pos_slot, 1).flatten(1, 2)
-        pos_slots = self.pos_slot_emb.weight.unsqueeze(0).repeat(bs, 1, 1)
+        if self.share_pos_slot:
+            pos_slots = self.pos_slot_emb.weight.repeat(self.num_slots, 1)
+        else:
+            pos_slots = self.pos_slot_emb.weight
+        pos_slots = pos_slots.unsqueeze(0).repeat(bs, 1, 1)
         slots = torch.cat([text_slots, pos_slots], dim=-1)
         slots = self.slot_proj(slots)
         obj_mask = obj_mask.unsqueeze(2).\
