@@ -26,7 +26,7 @@ class SlotAttentionParams:
     use_bg_sep_slot: bool = False
 
     # whether use pos slot attention model
-    use_pos_slot_model: bool = False
+    use_slot_pos_emb: bool = False
     num_pos_slot: int = 4
     share_pos_slot: bool = False
 

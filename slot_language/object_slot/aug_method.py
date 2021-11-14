@@ -4,7 +4,6 @@ from torchvision import utils as vutils
 import pytorch_lightning as pl
 
 from obj_method import ObjSlotAttentionVideoLanguageMethod
-from pos_model import ObjPosSlotAttentionModel
 from aug_model import ObjAugSlotAttentionModel
 from aug_params import SlotAttentionParams
 
@@ -82,7 +81,7 @@ class ObjAugSlotAttentionVideoLanguageMethod(
             nrow=masks.shape[1],
         )  # [C, B*H, num_slots*W]
 
-        if isinstance(self.model.model, ObjPosSlotAttentionModel):
+        if self.params.use_slot_pos_emb:
             all_masks = slots
             all_masks = torch.cat([all_masks] * C, dim=3)
             all_masks = all_masks.transpose(2, 1).flatten(0, 1)

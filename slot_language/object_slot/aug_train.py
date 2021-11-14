@@ -19,12 +19,12 @@ from aug_params import SlotAttentionParams
 
 
 def build_aug_slot_attention_model(params: SlotAttentionParams):
-    if params.use_pos_slot_model:
-        print('Using PosSlotAttentionModel!')
-        model = build_pos_slot_attention_model(params)
-    elif params.use_unet_slot_model:
+    if params.use_unet_slot_model:
         print('Using UNetSlotAttentionModel!')
         model = build_unet_slot_attention_model(params)
+    elif params.use_slot_pos_emb:
+        print('Using PosSlotAttentionModel!')
+        model = build_pos_slot_attention_model(params)
     else:
         print('Using ObjSlotAttentionModel!')
         model = build_slot_attention_model(params)
@@ -114,7 +114,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         callbacks=[
             LearningRateMonitor("step"),
             PosSlotImageLogCallback()
-            if params.use_pos_slot_model else ImageLogCallback(),
+            if params.use_slot_pos_emb else ImageLogCallback(),
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
