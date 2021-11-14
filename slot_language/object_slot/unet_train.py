@@ -10,8 +10,8 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
 from obj_train import build_data_module, process_ckp, build_text2slot_model, \
-    VideoLogCallback, ImageLogCallback
-from obj_method import ObjSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+    VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
+from unet_method import UNetSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from unet_model import UNetSlotAttentionModel, PosUNetSlotAttentionModel
 from unet_params import SlotAttentionParams
 
@@ -20,6 +20,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
     if params.use_slot_pos_emb:
+        print('Using PosUNetSlotAttentionModel!')
         model = PosUNetSlotAttentionModel(
             clip_model=clip_model,
             use_clip_vision=params.use_clip_vision,
@@ -132,7 +133,8 @@ def main(params: Optional[SlotAttentionParams] = None):
         val_check_interval=args.eval_interval,
         callbacks=[
             LearningRateMonitor("step"),
-            ImageLogCallback(),
+            PosSlotImageLogCallback()
+            if params.use_slot_pos_emb else ImageLogCallback(),
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
