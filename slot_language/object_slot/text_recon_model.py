@@ -1,0 +1,201 @@
+from typing import Tuple
+
+import torch
+from torch import nn
+from torch.nn import functional as F
+
+from clip import CLIP
+from obj_model import ObjSlotAttentionModel
+
+
+def fc_bn_relu(in_dim, out_dim, use_bn):
+    if use_bn:
+        return nn.Sequential(
+            nn.Linear(in_dim, out_dim, bias=False),
+            nn.BatchNorm1d(out_dim),
+            nn.ReLU(),
+        )
+    return nn.Sequential(
+        nn.Linear(in_dim, out_dim, bias=True),
+        nn.ReLU(),
+    )
+
+
+def build_mlps(in_channels, hidden_sizes, out_channels, use_bn=False):
+    if hidden_sizes is None or len(hidden_sizes) == 0:
+        return nn.Linear(in_channels, out_channels)
+    modules = [fc_bn_relu(in_channels, hidden_sizes[0], use_bn=use_bn)]
+    for i in range(0, len(hidden_sizes) - 1):
+        modules.append(
+            fc_bn_relu(hidden_sizes[i], hidden_sizes[i + 1], use_bn=use_bn))
+    modules.append(nn.Linear(hidden_sizes[-1], out_channels))
+    return nn.Sequential(*modules)
+
+
+class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
+    """Reconstruct text from grouped features.
+
+    The reconstructed task is simplified to two classification:
+        - color: ['blue', 'brown', 'cyan', 'gray', 'green', 'purple', 'red', 'yellow']
+            their token_id are [1746, 2866, 1470, 7048, 1901, 5496,  736, 4481]
+        - shape: ['cube', 'cylinder']
+            their token_id are [11353, 22092]
+    """
+
+    def __init__(self,
+                 clip_model: CLIP,
+                 use_clip_vision: bool,
+                 use_clip_text: bool,
+                 text2slot_model: nn.Module,
+                 resolution: Tuple[int, int],
+                 num_slots: int,
+                 num_iterations: int,
+                 cls_mlps: Tuple[int, ...] = (),
+                 hard_visual_masking: bool = False,
+                 enc_resolution: Tuple[int, int] = (128, 128),
+                 enc_channels: int = 3,
+                 enc_pos_enc: bool = False,
+                 slot_size: int = 64,
+                 dec_kernel_size: int = 5,
+                 dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
+                 dec_resolution: Tuple[int, int] = (8, 8),
+                 slot_mlp_size: int = 128,
+                 use_word_set: bool = False,
+                 use_padding_mask: bool = False,
+                 use_entropy_loss: bool = False,
+                 use_bg_sep_slot: bool = False):
+        super().__init__(
+            clip_model,
+            use_clip_vision,
+            use_clip_text,
+            text2slot_model,
+            resolution,
+            num_slots,
+            num_iterations,
+            enc_resolution=enc_resolution,
+            enc_channels=enc_channels,
+            enc_pos_enc=enc_pos_enc,
+            slot_size=slot_size,
+            dec_kernel_size=dec_kernel_size,
+            dec_hidden_dims=dec_hidden_dims,
+            dec_resolution=dec_resolution,
+            slot_mlp_size=slot_mlp_size,
+            use_word_set=use_word_set,
+            use_padding_mask=use_padding_mask,
+            use_entropy_loss=use_entropy_loss,
+            use_bg_sep_slot=use_bg_sep_slot)
+
+        self.color_tokens = [1746, 2866, 1470, 7048, 1901, 5496, 736, 4481]
+        self.shape_tokens = [11353, 22092]
+        self.num_colors = len(self.color_tokens)
+        self.num_shapes = len(self.shape_tokens)
+        self.color_mlp = build_mlps(self.dec_hidden_dims[-1], cls_mlps,
+                                    self.num_colors)
+        self.shape_mlp = build_mlps(self.dec_hidden_dims[-1], cls_mlps,
+                                    self.num_shapes)
+        self.hard_visual_masking = hard_visual_masking
+
+    def _get_encoder_out(self, img):
+        """Encode image, potentially add pos enc, apply MLP."""
+        if self.use_clip_vision:
+            encoder_out = self.clip_model.encode_image(
+                img, global_feats=False, downstream=True)  # BCDD
+            encoder_out = encoder_out.type(self.dtype)
+        else:
+            encoder_out = self.encoder(img)
+        img_feats = encoder_out  # Conv features without pos_enc
+        # may not applying pos_enc because Encoder in CLIP already does so
+        if self.enc_pos_enc:
+            encoder_out = self.encoder_pos_embedding(encoder_out)
+        # `encoder_out` has shape: [batch_size, C, height, width]
+        encoder_out = torch.flatten(encoder_out, start_dim=2, end_dim=3)
+        # `encoder_out` has shape: [batch_size, C, height*width]
+        encoder_out = encoder_out.permute(0, 2, 1)
+        encoder_out = self.encoder_out_layer(encoder_out)
+        # `encoder_out` has shape: [batch_size, height*width, C]
+        return encoder_out, img_feats
+
+    def forward(self, x):
+        torch.cuda.empty_cache()
+
+        slots, img_feats, obj_mask = self.encode(x)
+
+        recon_combined, recons, masks, slots = self.decode(
+            slots, x['img'].shape)
+
+        if not self.training:
+            return recon_combined, recons, masks, slots
+
+        pred_colors, pred_shapes, gt_colors, gt_shapes = \
+            self._reconstruct_text(img_feats, masks, x['text'], obj_mask)
+
+        return recon_combined, recons, masks, slots, \
+            pred_colors, pred_shapes, gt_colors, gt_shapes
+
+    def encode(self, x):
+        """Encode from img to slots."""
+        img, text, padding = x['img'], x['text'], x['padding']
+        encoder_out, img_feats = self._get_encoder_out(img)
+        # `encoder_out` has shape: [batch_size, height*width, filter_size]
+        # `img_feats` has shape: [B, C, H, W]
+
+        # slot initialization
+        slot_mu, obj_mask = self._get_slot_embedding(text, padding)
+
+        # (batch_size, self.num_slots, self.slot_size)
+        slots = self.slot_attention(encoder_out, slot_mu, fg_mask=obj_mask)
+        return slots, img_feats, obj_mask
+
+    def _reconstruct_text(self, img_feats, slot_masks, tokens, obj_mask):
+        """Reconstruct text from grouped visual features.
+
+        Args:
+            img_feats: [B, C, H, W]
+            slots_masks: [B, num_slots, 1, H, W]
+            tokens: [B, num_slots, 77], color at [2], shape at [3]
+            obj_mask: [B, num_slots]
+        """
+        B, C, H, W = img_feats.shape
+        slot_masks = slot_masks[:, :, 0]  # [B, num_slots, H, W]
+        if self.hard_visual_masking:
+            slot_masks = (slot_masks == slot_masks.max(1, keepdim=True)[0])
+            slot_masks = slot_masks.as_type(img_feats)
+        grouped_feats = img_feats[:, None] * slot_masks[:, :, None]
+        grouped_feats = grouped_feats.sum(dim=[-1, -2]) / \
+            (slot_masks.sum(dim=[-1, -2])[:, :, None] + 1e-6)
+        assert grouped_feats == torch.Size([B, self.num_slots, C])
+        grouped_feats = grouped_feats[obj_mask]
+        pred_colors = self.color_mlp(grouped_feats)
+        pred_shapes = self.shape_mlp(grouped_feats)
+
+        # construct labels
+        gt_colors = tokens[obj_mask, 2]
+        for i, color in enumerate(self.color_tokens):
+            gt_colors[gt_colors == color] = i
+        gt_shapes = tokens[obj_mask, 3]
+        for i, shape in enumerate(self.shape_tokens):
+            gt_shapes[gt_shapes == shape] = i
+        assert 0 <= gt_colors.min().item() <= gt_colors.max().item(
+        ) < self.num_colors
+        assert 0 <= gt_shapes.min().item() <= gt_shapes.max().item(
+        ) < self.num_shapes
+
+        return pred_colors, pred_shapes, gt_colors, gt_shapes
+
+    def loss_function(self, input):
+        recon_combined, recons, masks, slots, \
+            pred_colors, pred_shapes, gt_colors, gt_shapes = self.forward(input)
+        loss = F.mse_loss(recon_combined, input['img'])
+        color_cls_loss = F.cross_entropy(pred_colors, gt_colors)
+        shape_cls_loss = F.cross_entropy(pred_shapes, gt_shapes)
+        loss_dict = {
+            'recon_loss': loss,
+            'color_cls_loss': color_cls_loss,
+            'shape_cls_loss': shape_cls_loss,
+        }
+        # masks: [B, num_slots, 1, H, W], apply entropy loss
+        if self.use_entropy_loss:
+            masks = masks[:, :, 0]  # [B, num_slots, H, W]
+            entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
+            loss_dict['entropy'] = entropy_loss
+        return loss_dict
