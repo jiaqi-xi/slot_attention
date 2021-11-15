@@ -29,8 +29,12 @@ def build_slot_attention_model(params: SlotAttentionParams):
         resolution=params.resolution,
         num_slots=params.num_slots,
         num_iterations=params.num_iterations,
+        viewpoint_dataset=False if not hasattr(params, 'viewpoint_dataset')
+        else params.viewpoint_dataset,
         cls_mlps=params.recon_cls_mlps,
         hard_visual_masking=params.hard_visual_masking,
+        recon_from_feats=True if not hasattr(params, 'recon_from_feats') else
+        params.recon_from_feats,
         enc_resolution=params.enc_resolution,
         enc_channels=params.clip_vision_channel,
         enc_pos_enc=params.enc_pos_enc,

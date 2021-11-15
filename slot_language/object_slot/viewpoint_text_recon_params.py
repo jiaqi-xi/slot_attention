@@ -8,7 +8,7 @@ import attr
 class SlotAttentionParams:
     # model configs
     resolution: Tuple[int, int] = (128, 128)  # since we not using ViT
-    num_slots: int = 7  # at most 6 obj per image/video
+    num_slots: int = 3  # at most 2 obj per image/video
     # dim of slots embedding
     slot_size: int = 64
     num_iterations: int = 3
@@ -25,7 +25,7 @@ class SlotAttentionParams:
     use_bg_sep_slot: bool = False
 
     # for text reconstruction
-    viewpoint_dataset: bool = False
+    viewpoint_dataset: bool = True
     recon_cls_mlps: Tuple[int, ...] = (64, )
     hard_visual_masking: bool = False
     recon_from_feats: bool = True  # reconstruct from encoded img_feats
@@ -47,18 +47,18 @@ class SlotAttentionParams:
     text2slot_hidden_sizes: Tuple[int] = (512, )
 
     # data
-    # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
-    data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
+    data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
+    # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     shuffle_obj: bool = True  # shuffle cls labels to avoid trivial solution
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
 
     # training settings
-    gpus: int = 1
-    lr: float = 0.0004
-    batch_size: int = 64
-    val_batch_size: int = 64
-    max_epochs: int = 8
+    gpus: int = 4
+    lr: float = 0.001
+    batch_size: int = 64 * 4
+    val_batch_size: int = 64 * 4
+    max_epochs: int = 100
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5
     weight_decay: float = 0.0
@@ -66,7 +66,7 @@ class SlotAttentionParams:
     num_val_images: Optional[int] = None
     is_logger_enabled: bool = True
     is_verbose: bool = True
-    num_workers: int = 4
+    num_workers: int = 6
     n_samples: int = 5
     warmup_steps_pct: float = 0.02
     decay_steps_pct: float = 0.2

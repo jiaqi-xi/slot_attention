@@ -40,6 +40,8 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             their token_id are [1746, 2866, 1470, 7048, 1901, 5496,  736, 4481]
         - shape: ['cube', 'cylinder']
             their token_id are [11353, 22092]
+        *Note*: for `viewpoint_dataset`, shapes are ['cone', 'cube', 'cylinder', 'sphere']
+            their token_id are [10266, 11353, 22092,  6987]
     """
 
     def __init__(self,
@@ -50,8 +52,10 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
                  resolution: Tuple[int, int],
                  num_slots: int,
                  num_iterations: int,
+                 viewpoint_dataset: bool = False,
                  cls_mlps: Tuple[int, ...] = (),
                  hard_visual_masking: bool = False,
+                 recon_from_feats: bool = True,
                  enc_resolution: Tuple[int, int] = (128, 128),
                  enc_channels: int = 3,
                  enc_pos_enc: bool = False,
@@ -86,7 +90,8 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             use_bg_sep_slot=use_bg_sep_slot)
 
         self.color_tokens = [1746, 2866, 1470, 7048, 1901, 5496, 736, 4481]
-        self.shape_tokens = [11353, 22092]
+        self.shape_tokens = [10266, 11353, 22092,  6987] if \
+            viewpoint_dataset else [11353, 22092]
         self.num_colors = len(self.color_tokens)
         self.num_shapes = len(self.shape_tokens)
         self.color_mlp = build_mlps(self.dec_hidden_dims[-1], cls_mlps,
@@ -94,6 +99,7 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
         self.shape_mlp = build_mlps(self.dec_hidden_dims[-1], cls_mlps,
                                     self.num_shapes)
         self.hard_visual_masking = hard_visual_masking
+        self.recon_from_feats = recon_from_feats
 
     def _get_encoder_out(self, img):
         """Encode image, potentially add pos enc, apply MLP."""
@@ -127,7 +133,7 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             return recon_combined, recons, masks, slots
 
         pred_colors, pred_shapes, gt_colors, gt_shapes = \
-            self._reconstruct_text(img_feats, masks, x['text'], obj_mask)
+            self._reconstruct_text(img_feats, recons, masks, x['text'], obj_mask)
 
         return recon_combined, recons, masks, slots, \
             pred_colors, pred_shapes, gt_colors, gt_shapes
@@ -146,23 +152,32 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
         slots = self.slot_attention(encoder_out, slot_mu, fg_mask=obj_mask)
         return slots, img_feats, obj_mask
 
-    def _reconstruct_text(self, img_feats, slot_masks, tokens, obj_mask):
+    def _reconstruct_text(self, img_feats, recon_imgs, slot_masks, tokens,
+                          obj_mask):
         """Reconstruct text from grouped visual features.
 
         Args:
             img_feats: [B, C, H, W]
+            recon_imgs: [B, num_slots, C, H, W]
             slots_masks: [B, num_slots, 1, H, W]
             tokens: [B, num_slots, 77], color at [2], shape at [3]
             obj_mask: [B, num_slots]
         """
         B, C, H, W = img_feats.shape
-        slot_masks = slot_masks[:, :, 0]  # [B, num_slots, H, W]
-        if self.hard_visual_masking:
-            slot_masks = (slot_masks == slot_masks.max(1, keepdim=True)[0])
-            slot_masks = slot_masks.as_type(img_feats)
-        grouped_feats = img_feats[:, None] * slot_masks[:, :, None]
-        grouped_feats = grouped_feats.sum(dim=[-1, -2]) / \
-            (slot_masks.sum(dim=[-1, -2])[:, :, None] + 1e-6)
+        if self.recon_from_feats:
+            slot_masks = slot_masks[:, :, 0]  # [B, num_slots, H, W]
+            if self.hard_visual_masking:
+                slot_masks = (slot_masks == slot_masks.max(1, keepdim=True)[0])
+                slot_masks = slot_masks.as_type(img_feats)
+            grouped_feats = img_feats[:, None] * slot_masks[:, :, None]
+            grouped_feats = grouped_feats.sum(dim=[-1, -2]) / \
+                (slot_masks.sum(dim=[-1, -2])[:, :, None] + 1e-6)
+        else:
+            recon_imgs = recon_imgs * slot_masks  # [B, num_slots, C, H, W]
+            img_feats = self.encoder(recon_imgs.flatten(0, 1)).view(
+                B, self.num_slots, C, H, W)
+            grouped_feats = img_feats.mean(dim=[-1, -2])
+
         assert grouped_feats.shape == torch.Size([B, self.num_slots, C])
         grouped_feats = grouped_feats[obj_mask]
         pred_colors = self.color_mlp(grouped_feats)
