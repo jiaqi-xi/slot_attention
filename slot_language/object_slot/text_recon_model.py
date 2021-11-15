@@ -163,16 +163,23 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
         grouped_feats = img_feats[:, None] * slot_masks[:, :, None]
         grouped_feats = grouped_feats.sum(dim=[-1, -2]) / \
             (slot_masks.sum(dim=[-1, -2])[:, :, None] + 1e-6)
-        assert grouped_feats == torch.Size([B, self.num_slots, C])
+        assert grouped_feats.shape == torch.Size([B, self.num_slots, C])
         grouped_feats = grouped_feats[obj_mask]
         pred_colors = self.color_mlp(grouped_feats)
         pred_shapes = self.shape_mlp(grouped_feats)
 
         # construct labels
-        gt_colors = tokens[obj_mask, 2]
+        obj_tokens = tokens[obj_mask]
+        gt_colors = obj_tokens[:, 2]
         for i, color in enumerate(self.color_tokens):
-            gt_colors[gt_colors == color] = i
-        gt_shapes = tokens[obj_mask, 3]
+            color_mask = (gt_colors == color)
+            gt_colors[color_mask] = i
+            # 'cyan' will be splited into two tokens
+            # so the shape token is at [4]
+            if color == 1470:
+                obj_tokens[color_mask, 3] = obj_tokens[color_mask, 4]
+
+        gt_shapes = obj_tokens[:, 3]
         for i, shape in enumerate(self.shape_tokens):
             gt_shapes[gt_shapes == shape] = i
         assert 0 <= gt_colors.min().item() <= gt_colors.max().item(
@@ -183,16 +190,20 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
         return pred_colors, pred_shapes, gt_colors, gt_shapes
 
     def loss_function(self, input):
-        recon_combined, recons, masks, slots, \
-            pred_colors, pred_shapes, gt_colors, gt_shapes = self.forward(input)
+        if self.training:
+            recon_combined, recons, masks, slots, pred_colors, pred_shapes, \
+                gt_colors, gt_shapes = self.forward(input)
+        else:
+            recon_combined, recons, masks, slots = self.forward(input)
         loss = F.mse_loss(recon_combined, input['img'])
-        color_cls_loss = F.cross_entropy(pred_colors, gt_colors)
-        shape_cls_loss = F.cross_entropy(pred_shapes, gt_shapes)
         loss_dict = {
             'recon_loss': loss,
-            'color_cls_loss': color_cls_loss,
-            'shape_cls_loss': shape_cls_loss,
         }
+        if self.training:
+            color_cls_loss = F.cross_entropy(pred_colors, gt_colors)
+            shape_cls_loss = F.cross_entropy(pred_shapes, gt_shapes)
+            loss_dict['color_cls_loss'] = color_cls_loss
+            loss_dict['shape_cls_loss'] = shape_cls_loss
         # masks: [B, num_slots, 1, H, W], apply entropy loss
         if self.use_entropy_loss:
             masks = masks[:, :, 0]  # [B, num_slots, H, W]

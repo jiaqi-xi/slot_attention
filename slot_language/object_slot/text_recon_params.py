@@ -27,6 +27,8 @@ class SlotAttentionParams:
     # for text reconstruction
     recon_cls_mlps: Tuple[int, ...] = ()
     hard_visual_masking: bool = False
+    color_cls_loss: float = 1.0
+    shape_cls_loss: float = 1.0
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
