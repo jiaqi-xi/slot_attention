@@ -28,7 +28,7 @@ class SlotAttentionParams:
     viewpoint_dataset: bool = True
     recon_cls_mlps: Tuple[int, ...] = (64, )
     hard_visual_masking: bool = False
-    recon_from_feats: bool = True  # reconstruct from encoded img_feats
+    recon_from: bool = 'slots'
     color_cls_loss: float = 0.01
     shape_cls_loss: float = 0.01
 
