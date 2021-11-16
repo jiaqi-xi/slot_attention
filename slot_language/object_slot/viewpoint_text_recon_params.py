@@ -26,7 +26,7 @@ class SlotAttentionParams:
 
     # for text reconstruction
     viewpoint_dataset: bool = True
-    recon_cls_mlps: Tuple[int, ...] = (64, )
+    recon_cls_mlps: Tuple[int, ...] = ()  # one-layer FC is enough
     hard_visual_masking: bool = False
     recon_from: bool = 'slots'
     color_cls_loss: float = 0.01

@@ -102,4 +102,5 @@ if __name__ == "__main__":
     params = importlib.import_module(args.params)
     params = params.SlotAttentionParams()
     params.num_iterations = args.num_iter
+    params.gpus = 1
     main(params)
