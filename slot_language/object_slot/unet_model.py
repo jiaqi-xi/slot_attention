@@ -35,8 +35,6 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
         enc_pos_enc: bool = False,
         dec_resolution: Tuple[int, int] = (8, 8),
-        use_word_set: bool = False,
-        use_padding_mask: bool = False,
         use_entropy_loss: bool = False,
         use_bg_sep_slot: bool = False,
     ):
@@ -53,8 +51,6 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         self.use_double_conv = False
         self.use_bilinear = True
         self.use_bn = False
-        self.use_word_set = use_word_set
-        self.use_padding_mask = use_padding_mask
         self.out_features = slot_size
 
         # encoder output feature maps with channel `enc_channels[0]`

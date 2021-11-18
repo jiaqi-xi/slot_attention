@@ -26,8 +26,6 @@ class ObjRecurSlotAttentionModel(ObjSlotAttentionModel):
                  dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
                  dec_resolution: Tuple[int, int] = (7, 7),
                  slot_mlp_size: int = 128,
-                 use_word_set: bool = False,
-                 use_padding_mask: bool = False,
                  use_entropy_loss: bool = False,
                  use_bg_sep_slot: bool = False,
                  slot_emb_lstm: nn.LSTM = None):
@@ -47,8 +45,6 @@ class ObjRecurSlotAttentionModel(ObjSlotAttentionModel):
             dec_hidden_dims=dec_hidden_dims,
             dec_resolution=dec_resolution,
             slot_mlp_size=slot_mlp_size,
-            use_word_set=use_word_set,
-            use_padding_mask=use_padding_mask,
             use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot)
         self.slot_emb_lstm = slot_emb_lstm

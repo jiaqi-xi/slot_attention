@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from clip import CLIP
-from utils import build_mlps
+from obj_utils import build_mlps
 from obj_model import ObjSlotAttentionModel
 
 
@@ -41,8 +41,6 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
                  dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
                  dec_resolution: Tuple[int, int] = (8, 8),
                  slot_mlp_size: int = 128,
-                 use_word_set: bool = False,
-                 use_padding_mask: bool = False,
                  use_entropy_loss: bool = False,
                  use_bg_sep_slot: bool = False):
         super().__init__(
@@ -61,8 +59,6 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             dec_hidden_dims=dec_hidden_dims,
             dec_resolution=dec_resolution,
             slot_mlp_size=slot_mlp_size,
-            use_word_set=use_word_set,
-            use_padding_mask=use_padding_mask,
             use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot)
 
