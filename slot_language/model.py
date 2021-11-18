@@ -25,6 +25,7 @@ class SlotAttention(nn.Module):
         self.slot_size = slot_size  # number of hidden layers in slot dimensions
         self.mlp_hidden_size = mlp_hidden_size
         self.epsilon = epsilon
+        self.attn_scale = self.slot_size**-0.5
 
         self.norm_inputs = nn.LayerNorm(self.in_features)
         # I guess this is layer norm across each slot? should look into this
@@ -121,8 +122,7 @@ class SlotAttention(nn.Module):
             q = self.project_q(
                 slots)  # Shape: [batch_size, num_slots, slot_size].
 
-            attn_norm_factor = self.slot_size**-0.5
-            attn_logits = attn_norm_factor * torch.matmul(k, q.transpose(2, 1))
+            attn_logits = self.attn_scale * torch.matmul(k, q.transpose(2, 1))
             attn = F.softmax(attn_logits, dim=-1)
             # `attn` has shape: [batch_size, num_inputs, num_slots].
 

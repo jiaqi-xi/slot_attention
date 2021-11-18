@@ -4,7 +4,10 @@ from typing import Tuple
 import torch
 from torch import nn
 from torch.nn import functional as F
+
 from clip import CLIP
+from slot_language.model import SoftPositionEmbed
+from utils import SepLinear, SepLayerNorm, SepGRUCell
 
 sys.path.append('../')
 
@@ -16,6 +19,78 @@ class ObjSlotAttention(SlotAttention):
 
     def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
         return super().forward(inputs, slots_mu, slots_log_sigma)
+
+
+class SemPosSepSlotAttention(nn.Module):
+    """SlotAttention that treats semantic and position information separately.
+
+    The forward pass is the same, simply replacing Modules with SepModules.
+
+    Args:
+        pos_dim: number of dims for position information, w.r.t. `slot_size`.
+            E.g., if slot_size = 64 and pos_dim = 8, then if in_features = 144,
+                we assume the last 16 channels of the img_feats is pos_enc.
+    """
+
+    def __init__(self,
+                 in_features,
+                 num_iterations,
+                 num_slots,
+                 slot_size,
+                 mlp_hidden_size,
+                 pos_dim=8,
+                 epsilon=1e-6):
+        super().__init__()
+
+        self.pos_ratio = pos_dim / slot_size
+        self.pos_dim = pos_dim
+        self.in_features = int(in_features * (1 + self.pos_ratio))
+        self.num_iterations = num_iterations
+        self.num_slots = num_slots
+        self.slot_size = int(slot_size * (1 + self.pos_ratio))
+        self.mlp_hidden_size = int(mlp_hidden_size * (1 + self.pos_ratio))
+        self.epsilon = epsilon
+        self.attn_scale = self.slot_size**-0.5
+
+        self.norm_inputs = SepLayerNorm(in_features, self.in_features)
+        self.norm_slots = SepLayerNorm(slot_size, self.slot_size)
+        self.norm_mlp = SepLayerNorm(slot_size, self.slot_size)
+
+        # Linear maps for the attention module.
+        self.project_q = SepLinear(
+            slot_size, self.slot_size, self.slot_size, bias=False)
+        self.project_k = SepLinear(
+            in_features, self.in_features, self.slot_size, bias=False)
+        self.project_v = SepLinear(
+            in_features, self.in_features, self.slot_size, bias=False)
+
+        # Slot update functions.
+        self.gru = SepGRUCell(slot_size, self.slot_size, self.slot_size)
+        self.mlp = nn.Sequential(
+            SepLinear(slot_size, self.slot_size, self.mlp_hidden_size),
+            nn.ReLU(),
+            SepLinear(mlp_hidden_size, self.mlp_hidden_size, self.slot_size),
+        )
+
+        # FC to keep the output slot_size
+        self.out_fc = nn.Linear(self.slot_size, slot_size)
+
+    def _init_slots(self, batch_size, slots_mu, slots_log_sigma):
+        # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
+        assert len(slots_mu.shape) == 3, 'wrong slot embedding shape!'
+        assert int(slots_mu.shape[-1] * (1 + self.pos_ratio)) == self.slot_size
+        # pad it with pos_emb, inited as all zeros vector
+        slots = torch.cat([
+            slots_mu,
+            torch.zeros(batch_size, self.num_slots,
+                        self.pos_dim).type_as(slots_mu).detach()
+        ],
+                          dim=-1)
+        return slots
+
+    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
+        slots = super().forward(inputs, slots_mu, slots_log_sigma)
+        return self.out_fc(slots)
 
 
 class ObjBgSepSlotAttention(BgSepSlotAttention):
@@ -129,8 +204,6 @@ class ObjSlotAttentionModel(SlotAttentionModel):
                  dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
                  dec_resolution: Tuple[int, int] = (8, 8),
                  slot_mlp_size: int = 128,
-                 use_word_set: bool = False,
-                 use_padding_mask: bool = False,
                  use_entropy_loss: bool = False,
                  use_bg_sep_slot: bool = False):
         super().__init__(
@@ -149,8 +222,8 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             dec_hidden_dims=dec_hidden_dims,
             dec_resolution=dec_resolution,
             slot_mlp_size=slot_mlp_size,
-            use_word_set=use_word_set,
-            use_padding_mask=use_padding_mask,
+            use_word_set=False,
+            use_padding_mask=False,
             use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot)
 
@@ -198,3 +271,78 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         # (batch_size, self.num_slots, self.slot_size)
         slots = self.slot_attention(encoder_out, slot_mu, fg_mask=obj_mask)
         return slots
+
+
+class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
+
+    def __init__(self,
+                 clip_model: CLIP,
+                 use_clip_vision: bool,
+                 use_clip_text: bool,
+                 text2slot_model: nn.Module,
+                 resolution: Tuple[int, int],
+                 num_slots: int,
+                 num_iterations: int,
+                 enc_resolution: Tuple[int, int] = (128, 128),
+                 enc_channels: int = 3,
+                 enc_mlp_out: bool = True,
+                 slot_size: int = 64,
+                 pos_size: int = 8,
+                 dec_kernel_size: int = 5,
+                 dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
+                 dec_resolution: Tuple[int, int] = (8, 8),
+                 slot_mlp_size: int = 128,
+                 use_entropy_loss: bool = False,
+                 use_bg_sep_slot: bool = False):
+        super().__init__(
+            clip_model,
+            use_clip_vision,
+            use_clip_text,
+            text2slot_model,
+            resolution,
+            num_slots,
+            num_iterations,
+            enc_resolution=enc_resolution,
+            enc_channels=enc_channels,
+            enc_pos_enc=True,
+            slot_size=slot_size,
+            dec_kernel_size=dec_kernel_size,
+            dec_hidden_dims=dec_hidden_dims,
+            dec_resolution=dec_resolution,
+            slot_mlp_size=slot_mlp_size,
+            use_entropy_loss=use_entropy_loss,
+            use_bg_sep_slot=use_bg_sep_slot)
+        self.enc_mlp_out = enc_mlp_out
+
+        # Build Encoder related modules
+        self.pos_ratio = pos_size / slot_size
+        self.encoder_pos_embedding = ConcatSoftPositionEmbed(
+            3, int(self.enc_channels * self.pos_ratio), self.enc_resolution)
+        if self.enc_mlp_out:
+            self.encoder_out_layer = nn.Sequential(
+                nn.Linear(self.enc_channels, self.out_features),
+                nn.ReLU(),
+                nn.Linear(self.out_features, self.out_features),
+            )
+
+    def _get_encoder_out(self, img):
+        """Encode image, potentially add pos enc, apply MLP."""
+        if self.use_clip_vision:
+            encoder_out = self.clip_model.encode_image(
+                img, global_feats=False, downstream=True)  # BCDD
+            encoder_out = encoder_out.type(self.dtype)
+        else:
+            encoder_out = self.encoder(img)
+        encoder_out = encoder_out.permute(0, 2, 3, 1)  # [B, H, W, C]
+        if self.enc_mlp_out:
+            encoder_out = self.encoder_out_layer(encoder_out)
+        encoder_out = self.encoder_pos_embedding(encoder_out).flatten(1, 2)
+        return encoder_out  # [B, H*W, C]
+
+
+class ConcatSoftPositionEmbed(SoftPositionEmbed):
+    """Concat along channel dim."""
+
+    def forward(self, inputs):
+        emb_proj = self.dense(self.grid)  # [B, H, W, C]
+        return torch.cat([inputs, emb_proj], dim=-1)

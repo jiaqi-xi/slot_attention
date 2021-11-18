@@ -12,7 +12,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import clip
 from obj_data import ObjCLEVRVisionLanguageCLIPDataModule
 from obj_method import ObjSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from obj_model import ObjSlotAttentionModel
+from obj_model import ObjSlotAttentionModel, SemPosSepObjSlotAttentionModel
 from obj_params import SlotAttentionParams
 
 sys.path.append('../')
@@ -27,6 +27,12 @@ from viewpoint_data import ObjCLEVRVisionLanguageViewpointDataModule
 
 
 def build_data_module(params: SlotAttentionParams):
+    if '4obj' in params.data_root:
+        assert params.num_slots == 5
+    elif 'viewpoint' in params.data_root:
+        assert params.num_slots == 3
+    else:
+        assert params.num_slots == 7
     clip_transforms = build_data_transforms(params)
     data_module = ObjCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
         params.data_root else ObjCLEVRVisionLanguageCLIPDataModule
@@ -57,25 +63,47 @@ def build_text2slot_model(params: SlotAttentionParams):
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
-    model = ObjSlotAttentionModel(
-        clip_model=clip_model,
-        use_clip_vision=params.use_clip_vision,
-        use_clip_text=params.use_text2slot,
-        text2slot_model=text2slot_model,
-        resolution=params.resolution,
-        num_slots=params.num_slots,
-        num_iterations=params.num_iterations,
-        enc_resolution=params.enc_resolution,
-        enc_channels=params.clip_vision_channel,
-        enc_pos_enc=params.enc_pos_enc,
-        slot_size=params.slot_size,
-        dec_kernel_size=params.dec_kernel_size,
-        dec_hidden_dims=params.dec_channels,
-        dec_resolution=params.dec_resolution,
-        slot_mlp_size=params.slot_mlp_size,
-        use_entropy_loss=params.use_entropy_loss,
-        use_bg_sep_slot=params.use_bg_sep_slot,
-    )
+    if params.use_sempos_sep:
+        model = SemPosSepObjSlotAttentionModel(
+            clip_model=clip_model,
+            use_clip_vision=params.use_clip_vision,
+            use_clip_text=params.use_text2slot,
+            text2slot_model=text2slot_model,
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            enc_resolution=params.enc_resolution,
+            enc_channels=params.clip_vision_channel,
+            enc_mlp_out=params.enc_mlp_out,
+            slot_size=params.slot_size,
+            pos_size=params.pos_size,
+            dec_kernel_size=params.dec_kernel_size,
+            dec_hidden_dims=params.dec_channels,
+            dec_resolution=params.dec_resolution,
+            slot_mlp_size=params.slot_mlp_size,
+            use_entropy_loss=params.use_entropy_loss,
+            use_bg_sep_slot=params.use_bg_sep_slot,
+        )
+    else:
+        model = ObjSlotAttentionModel(
+            clip_model=clip_model,
+            use_clip_vision=params.use_clip_vision,
+            use_clip_text=params.use_text2slot,
+            text2slot_model=text2slot_model,
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            enc_resolution=params.enc_resolution,
+            enc_channels=params.clip_vision_channel,
+            enc_pos_enc=params.enc_pos_enc,
+            slot_size=params.slot_size,
+            dec_kernel_size=params.dec_kernel_size,
+            dec_hidden_dims=params.dec_channels,
+            dec_resolution=params.dec_resolution,
+            slot_mlp_size=params.slot_mlp_size,
+            use_entropy_loss=params.use_entropy_loss,
+            use_bg_sep_slot=params.use_bg_sep_slot,
+        )
     return model
 
 

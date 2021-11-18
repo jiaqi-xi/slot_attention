@@ -45,6 +45,7 @@ class SlotAttentionParams:
     text2slot_hidden_sizes: Tuple[int] = (512, )
 
     # data
+    # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video_4obj"
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     shuffle_obj: bool = False
@@ -52,11 +53,11 @@ class SlotAttentionParams:
     simple_normalize: bool = True  # since we not using ViT
 
     # training settings
-    gpus: int = 1
-    lr: float = 0.0004
-    batch_size: int = 24
-    val_batch_size: int = 24
-    max_epochs: int = 6
+    gpus: int = 4
+    lr: float = 0.001
+    batch_size: int = 24 * 4
+    val_batch_size: int = 24 * 4
+    max_epochs: int = 12
     num_sanity_val_steps: int = 1
     scheduler_gamma: float = 0.5
     weight_decay: float = 0.0
@@ -64,7 +65,7 @@ class SlotAttentionParams:
     num_val_images: Optional[int] = None
     is_logger_enabled: bool = True
     is_verbose: bool = True
-    num_workers: int = 4
+    num_workers: int = 6
     n_samples: int = 5
     warmup_steps_pct: float = 0.02
     decay_steps_pct: float = 0.2
