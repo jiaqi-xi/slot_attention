@@ -12,16 +12,16 @@ import clip
 from obj_train import build_data_module, process_ckp, build_text2slot_model, \
     VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
 from unet_method import UNetSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from unet_model import UNetSlotAttentionModel, PosUNetSlotAttentionModel
+from unet_model import UNetSlotAttentionModel, SemPosSepUNetSlotAttentionModel
 from unet_params import SlotAttentionParams
 
 
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
-    if params.use_slot_pos_emb:
-        print('Using PosUNetSlotAttentionModel!')
-        model = PosUNetSlotAttentionModel(
+    if params.use_sempos_sep:
+        print('Using SemPosSepUNetSlotAttentionModel!')
+        model = SemPosSepUNetSlotAttentionModel(
             clip_model=clip_model,
             use_clip_vision=params.use_clip_vision,
             use_clip_text=params.use_text2slot,
@@ -29,9 +29,9 @@ def build_slot_attention_model(params: SlotAttentionParams):
             resolution=params.resolution,
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
-            num_pos_slot=params.num_pos_slot,
-            share_pos_slot=params.share_pos_slot,
             slot_size=params.slot_size,
+            enc_pos_size=params.enc_pos_size,
+            dec_pos_size=params.dec_pos_size,
             slot_mlp_size=params.slot_mlp_size,
             kernel_size=params.kernel_size,
             enc_channels=params.enc_channels,
@@ -42,6 +42,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
             use_bg_sep_slot=params.use_bg_sep_slot,
         )
     else:
+        print('Using UNetSlotAttentionModel!')
         model = UNetSlotAttentionModel(
             clip_model=clip_model,
             use_clip_vision=params.use_clip_vision,

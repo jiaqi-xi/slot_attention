@@ -24,10 +24,10 @@ class SlotAttentionParams:
     # whether treat bg slot separately
     use_bg_sep_slot: bool = False
 
-    # pos emb for each slot
-    use_slot_pos_emb: bool = False
-    num_pos_slot: int = 4
-    share_pos_slot: bool = True  # slots share the same positional embedding!
+    # setting about sem-pos separate model
+    use_sempos_sep: bool = False
+    enc_pos_size: int = 64  # number of dims for positional information
+    dec_pos_size: int = None  # if is int, then use cat instead of add
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False

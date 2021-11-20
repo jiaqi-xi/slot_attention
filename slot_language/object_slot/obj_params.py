@@ -26,8 +26,8 @@ class SlotAttentionParams:
 
     # setting about sem-pos separate model
     use_sempos_sep: bool = False
-    pos_size: int = 8  # number of dims for positional information
-    enc_mlp_out: bool = False  # apply an MLP (previously mixing pos and sem)
+    enc_pos_size: int = 64  # number of dims for positional information
+    dec_pos_size: int = None  # if is int, then use cat instead of add
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False

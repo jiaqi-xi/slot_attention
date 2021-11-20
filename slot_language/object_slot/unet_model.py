@@ -7,6 +7,7 @@ from torch.nn import functional as F
 
 from clip import CLIP
 from unet import UNet, UpBlock
+from obj_model import ConcatSoftPositionEmbed, SemPosSepSlotAttention
 
 sys.path.append('../')
 
@@ -49,6 +50,7 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         self.enc_resolution = resolution
         self.dec_resolution = dec_resolution
         self.use_double_conv = False
+        self.use_maxpool = False
         self.use_bilinear = True
         self.use_bn = False
         self.out_features = slot_size
@@ -77,10 +79,10 @@ class UNetSlotAttentionModel(SlotAttentionModel):
             3,
             enc_channels,
             kernel_size,
-            use_double_conv=False,
-            use_maxpool=False,
-            use_bilinear=True,
-            use_bn=False)
+            use_double_conv=self.use_double_conv,
+            use_maxpool=self.use_maxpool,
+            use_bilinear=self.use_bilinear,
+            use_bn=self.use_bn)
 
         # Build Encoder related modules
         if self.enc_pos_enc:
@@ -218,7 +220,7 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         return self.out_conv[0].weight.dtype
 
 
-class PosUNetSlotAttentionModel(UNetSlotAttentionModel):
+class SemPosSepUNetSlotAttentionModel(UNetSlotAttentionModel):
 
     def __init__(self,
                  clip_model: CLIP,
@@ -228,17 +230,15 @@ class PosUNetSlotAttentionModel(UNetSlotAttentionModel):
                  resolution: Tuple[int, int],
                  num_slots: int,
                  num_iterations: int,
-                 num_pos_slot: int = 5,
-                 share_pos_slot: bool = True,
                  slot_size: int = 64,
+                 enc_pos_size: int = 8,
+                 dec_pos_size: int = None,
                  slot_mlp_size: int = 128,
                  kernel_size: int = 5,
                  enc_channels: Tuple[int, ...] = (64, 64, 64, 64),
                  dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),
                  enc_pos_enc: bool = False,
                  dec_resolution: Tuple[int, int] = (8, 8),
-                 use_word_set: bool = False,
-                 use_padding_mask: bool = False,
                  use_entropy_loss: bool = False,
                  use_bg_sep_slot: bool = False):
         super().__init__(
@@ -256,75 +256,30 @@ class PosUNetSlotAttentionModel(UNetSlotAttentionModel):
             dec_channels=dec_channels,
             enc_pos_enc=enc_pos_enc,
             dec_resolution=dec_resolution,
-            use_word_set=use_word_set,
-            use_padding_mask=use_padding_mask,
             use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot)
 
-        self.slot_attention.num_slots *= num_pos_slot
-        self.num_pos_slot = num_pos_slot
-        self.share_pos_slot = share_pos_slot
-        num_embs = num_pos_slot if share_pos_slot else num_slots * num_pos_slot
-        self.pos_slot_emb = nn.Embedding(num_embs, slot_size)
-        nn.init.xavier_uniform_(
-            self.pos_slot_emb.weight, gain=nn.init.calculate_gain("linear"))
-        self.slot_proj = nn.Linear(2 * slot_size, slot_size, bias=True)
+        self.enc_pos_size = enc_pos_size
+        self.dec_pos_size = dec_pos_size
 
-    def encode(self, x):
-        """Encode from img to slots."""
-        img, text, padding = x['img'], x['text'], x['padding']
-        bs = img.shape[0]
-        encoder_out = self._get_encoder_out(img)  # transformed vision feature
-        # `encoder_out` has shape: [batch_size, height*width, filter_size]
+        # Build Encoder related modules
+        self.pos_ratio = enc_pos_size / slot_size
+        self.encoder_pos_embedding = ConcatSoftPositionEmbed(
+            3, int(self.enc_channels * self.pos_ratio), self.enc_resolution)
+        del self.encoder_out_layer  # no mixing pos and sem
 
-        # slot initialization, text_slots of shape [B, num_slots, slot_size]
-        text_slots, obj_mask = self._get_slot_embedding(text, padding)
+        self.slot_attention = SemPosSepSlotAttention(
+            in_features=self.out_features,
+            num_iterations=self.num_iterations,
+            num_slots=self.num_slots,
+            slot_size=self.slot_size,
+            mlp_hidden_size=self.slot_mlp_size,
+            pos_dim=self.enc_pos_size,
+        )
 
-        # concat text_slots with pos_slot_emb
-        text_slots = text_slots.unsqueeze(2).\
-            repeat(1, 1, self.num_pos_slot, 1).flatten(1, 2)
-        if self.share_pos_slot:
-            pos_slots = self.pos_slot_emb.weight.repeat(self.num_slots, 1)
-        else:
-            pos_slots = self.pos_slot_emb.weight
-        pos_slots = pos_slots.unsqueeze(0).repeat(bs, 1, 1)
-        slots = torch.cat([text_slots, pos_slots], dim=-1)
-        slots = self.slot_proj(slots)
-        obj_mask = obj_mask.unsqueeze(2).\
-            repeat(1, 1, self.num_pos_slot).flatten(1, 2)
-
-        # (batch_size, self.num_slots * self.num_pos_slot, self.slot_size)
-        slots = self.slot_attention(encoder_out, slots, fg_mask=obj_mask)
-        return slots
-
-    def decode(self, slots, img_shape):
-        """Decode from slots to reconstructed images and masks."""
-        # `slots` has shape: [B, num_slots, slot_size].
-        bs, num_slots, slot_size = slots.shape
-        assert num_slots == self.num_slots * self.num_pos_slot
-        bs, C, H, W = img_shape
-
-        # spatial broadcast
-        decoder_in = slots.view(bs * num_slots, slot_size, 1, 1)
-        decoder_in = decoder_in.repeat(1, 1, self.dec_resolution[0],
-                                       self.dec_resolution[1])
-
-        out = self.decoder_pos_embedding(decoder_in)
-        out = self.decoder(out)
-        out = self.out_conv(out)
-        # `out` has shape: [B*num_slots, C+1, H, W].
-
-        out = out.view(bs, self.num_slots, self.num_pos_slot, C + 1, H, W)
-        recons = out[:, :, :, :C, :, :]
-        masks = out[:, :, :, -1:, :, :]
-
-        # sum over each pos_emb
-        pos_masks = F.softmax(masks, dim=2)
-        recons = (recons * pos_masks).sum(2)  # [B, num_slots, C, H, W]
-        # masks = (masks * pos_masks).sum(2)  # [B, num_slots, 1, H, W]
-        # masks = F.softmax(masks, dim=1)
-        all_slots_masks = F.softmax(
-            masks.flatten(1, 2), dim=1).view(masks.shape)
-        masks = all_slots_masks.sum(2)
-        recon_combined = torch.sum(recons * masks, dim=1)
-        return recon_combined, recons, masks, all_slots_masks
+    def _build_decoder(self, channels, kernel_size):
+        if self.dec_pos_size is not None:
+            self.decoder_pos_embedding = ConcatSoftPositionEmbed(
+                3, self.dec_pos_size, self.dec_resolution)
+            channels[0] += self.dec_pos_size
+        return super()._build_decoder(channels, kernel_size)

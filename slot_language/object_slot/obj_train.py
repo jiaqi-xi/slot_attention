@@ -64,6 +64,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
     if params.use_sempos_sep:
+        print('Using SemPosSepObjSlotAttentionModel!')
         model = SemPosSepObjSlotAttentionModel(
             clip_model=clip_model,
             use_clip_vision=params.use_clip_vision,
@@ -74,9 +75,9 @@ def build_slot_attention_model(params: SlotAttentionParams):
             num_iterations=params.num_iterations,
             enc_resolution=params.enc_resolution,
             enc_channels=params.clip_vision_channel,
-            enc_mlp_out=params.enc_mlp_out,
             slot_size=params.slot_size,
-            pos_size=params.pos_size,
+            enc_pos_size=params.enc_pos_size,
+            dec_pos_size=params.dec_pos_size,
             dec_kernel_size=params.dec_kernel_size,
             dec_hidden_dims=params.dec_channels,
             dec_resolution=params.dec_resolution,
@@ -85,6 +86,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
             use_bg_sep_slot=params.use_bg_sep_slot,
         )
     else:
+        print('Using ObjSlotAttentionModel!')
         model = ObjSlotAttentionModel(
             clip_model=clip_model,
             use_clip_vision=params.use_clip_vision,

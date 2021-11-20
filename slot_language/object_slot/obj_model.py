@@ -289,9 +289,9 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
                  num_iterations: int,
                  enc_resolution: Tuple[int, int] = (128, 128),
                  enc_channels: int = 3,
-                 enc_mlp_out: bool = True,
                  slot_size: int = 64,
-                 pos_size: int = 8,
+                 enc_pos_size: int = 8,
+                 dec_pos_size: int = None,
                  dec_kernel_size: int = 5,
                  dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
                  dec_resolution: Tuple[int, int] = (8, 8),
@@ -316,19 +316,18 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
             slot_mlp_size=slot_mlp_size,
             use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot)
-        self.enc_mlp_out = enc_mlp_out
-        self.pos_size = pos_size
+
+        self.enc_pos_size = enc_pos_size
+        self.dec_pos_size = dec_pos_size
 
         # Build Encoder related modules
-        self.pos_ratio = pos_size / slot_size
+        self.pos_ratio = enc_pos_size / slot_size
         self.encoder_pos_embedding = ConcatSoftPositionEmbed(
             3, int(self.enc_channels * self.pos_ratio), self.enc_resolution)
-        if self.enc_mlp_out:
-            self.encoder_out_layer = nn.Sequential(
-                nn.Linear(self.enc_channels, self.out_features),
-                nn.ReLU(),
-                nn.Linear(self.out_features, self.out_features),
-            )
+        del self.encoder_out_layer  # no mixing pos and sem
+
+        # build Decoder related modules
+        self._build_decoder()
 
         self.slot_attention = SemPosSepSlotAttention(
             in_features=self.out_features,
@@ -336,8 +335,54 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
             num_slots=self.num_slots,
             slot_size=self.slot_size,
             mlp_hidden_size=self.slot_mlp_size,
-            pos_dim=self.pos_size,
+            pos_dim=self.enc_pos_size,
         )
+
+    def _build_decoder(self):
+        # Build Decoder
+        if self.dec_pos_size is not None:
+            self.decoder_pos_embedding = ConcatSoftPositionEmbed(
+                3, self.dec_pos_size, self.dec_resolution)
+            self.dec_hidden_dims[-1] += self.dec_pos_size
+
+        modules = []
+        for i in range(len(self.dec_hidden_dims) - 1, -1, -1):
+            modules.append(
+                nn.Sequential(
+                    nn.ConvTranspose2d(
+                        self.dec_hidden_dims[i],
+                        self.dec_hidden_dims[i - 1],
+                        kernel_size=self.dec_kernel_size,
+                        stride=2,
+                        padding=self.dec_kernel_size // 2,
+                        output_padding=1,
+                    ),
+                    nn.ReLU(),
+                ))
+
+        # same convolutions
+        modules.append(
+            nn.Sequential(
+                nn.ConvTranspose2d(
+                    self.out_features,
+                    self.out_features,
+                    kernel_size=self.dec_kernel_size,
+                    stride=1,
+                    padding=self.dec_kernel_size // 2,
+                    output_padding=0,
+                ),
+                nn.ReLU(),
+                nn.ConvTranspose2d(
+                    self.out_features,
+                    4,
+                    kernel_size=3,
+                    stride=1,
+                    padding=1,
+                    output_padding=0,
+                ),
+            ))
+
+        self.decoder = nn.Sequential(*modules)
 
     def _get_encoder_out(self, img):
         """Encode image, potentially add pos enc, apply MLP."""
@@ -347,10 +392,8 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
             encoder_out = encoder_out.type(self.dtype)
         else:
             encoder_out = self.encoder(img)
-        encoder_out = encoder_out.permute(0, 2, 3, 1)  # [B, H, W, C]
-        if self.enc_mlp_out:
-            encoder_out = self.encoder_out_layer(encoder_out)
-        encoder_out = self.encoder_pos_embedding(encoder_out).flatten(1, 2)
+        encoder_out = self.encoder_pos_embedding(encoder_out).\
+            permute(0, 2, 3, 1).flatten(1, 2)
         return encoder_out  # [B, H*W, C]
 
 
@@ -358,5 +401,6 @@ class ConcatSoftPositionEmbed(SoftPositionEmbed):
     """Concat along channel dim."""
 
     def forward(self, inputs):
-        emb_proj = self.dense(self.grid).repeat(inputs.shape[0], 1, 1, 1)
-        return torch.cat([inputs, emb_proj], dim=-1)
+        emb_proj = self.dense(self.grid).permute(0, 3, 1, 2)
+        return torch.cat(
+            [inputs, emb_proj.repeat(inputs.shape[0], 1, 1, 1)], dim=1)
