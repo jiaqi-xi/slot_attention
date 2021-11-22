@@ -11,37 +11,64 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 import clip
 from obj_train import build_text2slot_model, build_data_module, process_ckp, \
     VideoLogCallback, ImageLogCallback
-from text_recon_method import ObjTwoClsSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from text_recon_model import ObjTwoClsSlotAttentionModel
+from text_recon_method import ObjTextReconSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from text_recon_model import ObjTwoClsSlotAttentionModel, ObjFeatPredSlotAttentionModel
 from text_recon_params import SlotAttentionParams
 
 
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
-    model = ObjTwoClsSlotAttentionModel(
-        clip_model=clip_model,
-        use_clip_vision=params.use_clip_vision,
-        use_clip_text=params.use_text2slot,
-        text2slot_model=text2slot_model,
-        resolution=params.resolution,
-        num_slots=params.num_slots,
-        num_iterations=params.num_iterations,
-        viewpoint_dataset=params.viewpoint_dataset,
-        cls_mlps=params.recon_cls_mlps,
-        hard_visual_masking=params.hard_visual_masking,
-        recon_from=params.recon_from,
-        enc_resolution=params.enc_resolution,
-        enc_channels=params.clip_vision_channel,
-        enc_pos_enc=params.enc_pos_enc,
-        slot_size=params.slot_size,
-        dec_kernel_size=params.dec_kernel_size,
-        dec_hidden_dims=params.dec_channels,
-        dec_resolution=params.dec_resolution,
-        slot_mlp_size=params.slot_mlp_size,
-        use_entropy_loss=params.use_entropy_loss,
-        use_bg_sep_slot=params.use_bg_sep_slot,
-    )
+    if params.recon_feats:
+        print('Using ObjFeatPredSlotAttentionModel!')
+        model = ObjFeatPredSlotAttentionModel(
+            clip_model=clip_model,
+            use_clip_vision=params.use_clip_vision,
+            use_clip_text=params.use_text2slot,
+            text2slot_model=text2slot_model,
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            recon_mlps=params.recon_feats_mlp,
+            hard_visual_masking=params.hard_visual_masking,
+            normalize_feats=params.normalize_feats,
+            recon_from=params.recon_from,
+            enc_resolution=params.enc_resolution,
+            enc_channels=params.clip_vision_channel,
+            enc_pos_enc=params.enc_pos_enc,
+            slot_size=params.slot_size,
+            dec_kernel_size=params.dec_kernel_size,
+            dec_hidden_dims=params.dec_channels,
+            dec_resolution=params.dec_resolution,
+            slot_mlp_size=params.slot_mlp_size,
+            use_entropy_loss=params.use_entropy_loss,
+            use_bg_sep_slot=params.use_bg_sep_slot,
+        )
+    else:
+        print('Using ObjTwoClsSlotAttentionModel!')
+        model = ObjTwoClsSlotAttentionModel(
+            clip_model=clip_model,
+            use_clip_vision=params.use_clip_vision,
+            use_clip_text=params.use_text2slot,
+            text2slot_model=text2slot_model,
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            viewpoint_dataset=params.viewpoint_dataset,
+            cls_mlps=params.recon_cls_mlps,
+            hard_visual_masking=params.hard_visual_masking,
+            recon_from=params.recon_from,
+            enc_resolution=params.enc_resolution,
+            enc_channels=params.clip_vision_channel,
+            enc_pos_enc=params.enc_pos_enc,
+            slot_size=params.slot_size,
+            dec_kernel_size=params.dec_kernel_size,
+            dec_hidden_dims=params.dec_channels,
+            dec_resolution=params.dec_resolution,
+            slot_mlp_size=params.slot_mlp_size,
+            use_entropy_loss=params.use_entropy_loss,
+            use_bg_sep_slot=params.use_bg_sep_slot,
+        )
     return model
 
 

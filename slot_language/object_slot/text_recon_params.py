@@ -31,6 +31,10 @@ class SlotAttentionParams:
     recon_from: bool = 'slots'
     color_cls_loss: float = 0.01
     shape_cls_loss: float = 0.01
+    recon_feats: bool = False
+    recon_feats_mlp: Tuple[int, ...] = ()
+    normalize_feats: bool = False
+    text_recon_loss: float = 0.01
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
