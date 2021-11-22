@@ -93,8 +93,12 @@ class SemPosSepSlotAttention(SlotAttention):
         return slots
 
     def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
+        # [B, num_slots, C]
         slots = super().forward(inputs, slots_mu, slots_log_sigma)
-        return self.out_mlp(slots)
+        slot_size = int(self.slot_size / (1 + self.pos_ratio))
+        assert slots.shape[-1] - slot_size == self.pos_dim
+        sem_slots, pos_slots = slots[..., :slot_size], slots[..., slot_size:]
+        return self.out_mlp(slots), sem_slots, pos_slots
 
 
 class ObjBgSepSlotAttention(BgSepSlotAttention):
@@ -188,6 +192,82 @@ class ObjBgSepSlotAttention(BgSepSlotAttention):
         slots[fg_mask] = fg_slots
         slots[bg_mask] = bg_slots
         return slots
+
+
+class SemPosBgSepSlotAttention(BgSepSlotAttention):
+
+    def __init__(self,
+                 in_features,
+                 num_iterations,
+                 num_slots,
+                 slot_size,
+                 mlp_hidden_size,
+                 pos_dim=8,
+                 epsilon=0.000001):
+        nn.Module.__init__(self)
+
+        self.pos_ratio = pos_dim / slot_size
+        self.pos_dim = pos_dim
+        self.in_features = int(in_features * (1 + self.pos_ratio))
+        self.num_iterations = num_iterations
+        self.num_slots = num_slots
+        self.slot_size = int(slot_size * (1 + self.pos_ratio))
+        self.mlp_hidden_size = int(mlp_hidden_size * (1 + self.pos_ratio))
+        self.epsilon = epsilon
+        self.attn_scale = self.slot_size**-0.5
+
+        self.norm_inputs = SepLayerNorm(in_features, self.in_features)
+
+        # Linear maps for the attention module.
+        self.project_k = SepLinear(
+            in_features, self.in_features, self.slot_size, bias=False)
+        self.project_v = SepLinear(
+            in_features, self.in_features, self.slot_size, bias=False)
+        self.project_q = nn.Sequential(
+            SepLayerNorm(slot_size, self.slot_size),
+            SepLinear(slot_size, self.slot_size, self.slot_size, bias=False))
+        # for bg
+        self.bg_project_q = nn.Sequential(
+            SepLayerNorm(slot_size, self.slot_size),
+            SepLinear(slot_size, self.slot_size, self.slot_size, bias=False))
+
+        # Slot update functions.
+        self.gru = SepGRUCell(slot_size, self.slot_size, self.slot_size)
+        self.mlp = nn.Sequential(
+            SepLayerNorm(slot_size, self.slot_size),
+            SepLinear(slot_size, self.slot_size, self.mlp_hidden_size),
+            nn.ReLU(),
+            SepLinear(mlp_hidden_size, self.mlp_hidden_size, self.slot_size),
+        )
+        # for bg
+        self.bg_gru = SepGRUCell(slot_size, self.slot_size, self.slot_size)
+        self.bg_mlp = nn.Sequential(
+            SepLayerNorm(slot_size, self.slot_size),
+            SepLinear(slot_size, self.slot_size, self.mlp_hidden_size),
+            nn.ReLU(),
+            SepLinear(mlp_hidden_size, self.mlp_hidden_size, self.slot_size),
+        )
+
+    def _init_slots(self, batch_size, slots_mu, slots_log_sigma):
+        # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
+        assert len(slots_mu.shape) == 3, 'wrong slot embedding shape!'
+        assert int(slots_mu.shape[-1] * (1 + self.pos_ratio)) == self.slot_size
+        # pad it with pos_emb, inited as all zeros vector
+        slots = torch.cat([
+            slots_mu,
+            torch.zeros(batch_size, self.num_slots,
+                        self.pos_dim).type_as(slots_mu).detach()
+        ],
+                          dim=-1)
+        return slots[..., :-1], slots[..., -1:]
+
+    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
+        # [B, num_slots, C]
+        slots = super().forward(inputs, slots_mu, slots_log_sigma)
+        slot_size = int(self.slot_size / (1 + self.pos_ratio))
+        assert slots.shape[-1] - slot_size == self.pos_dim
+        sem_slots, pos_slots = slots[..., :slot_size], slots[..., slot_size:]
+        return self.out_mlp(slots), sem_slots, pos_slots
 
 
 class ObjSlotAttentionModel(SlotAttentionModel):
@@ -329,7 +409,9 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         # build Decoder related modules
         self._build_decoder()
 
-        self.slot_attention = SemPosSepSlotAttention(
+        slot_attn = SemPosBgSepSlotAttention if \
+            self.use_bg_sep_slot else SemPosSepSlotAttention
+        self.slot_attention = slot_attn(
             in_features=self.out_features,
             num_iterations=self.num_iterations,
             num_slots=self.num_slots,
@@ -397,6 +479,46 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         encoder_out = self.encoder_pos_embedding(encoder_out).\
             permute(0, 2, 3, 1).flatten(1, 2)
         return encoder_out  # [B, H*W, C]
+
+    def encode(self, x):
+        """Encode from img to slots."""
+        img, text, padding = x['img'], x['text'], x['padding']
+        encoder_out = self._get_encoder_out(img)  # transformed vision feature
+        # `encoder_out` has shape: [batch_size, height*width, filter_size]
+
+        # slot initialization
+        slot_mu, obj_mask = self._get_slot_embedding(text, padding)
+
+        # (batch_size, self.num_slots, self.slot_size)
+        slots, sem_slots, pos_slots = self.slot_attention(
+            encoder_out, slot_mu, fg_mask=obj_mask)
+        return slots, sem_slots, pos_slots
+
+    def forward(self, x):
+        torch.cuda.empty_cache()
+
+        slots, sem_slots, pos_slots = self.encode(x)
+
+        recon_combined, recons, masks, slots = self.decode(
+            slots, x['img'].shape)
+
+        if not self.training:
+            return recon_combined, recons, masks, slots
+        return recon_combined, recons, masks, slots, sem_slots, pos_slots
+
+    def loss_function(self, input):
+        recon_combined, recons, masks, slots, \
+            sem_slots, pos_slots = self.forward(input)
+        loss = F.mse_loss(recon_combined, input['img'])
+        loss_dict = {
+            "recon_loss": loss,
+        }
+        # masks: [B, num_slots, 1, H, W], apply entropy loss
+        if self.use_entropy_loss:
+            masks = masks[:, :, 0]  # [B, num_slots, H, W]
+            entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
+            loss_dict['entropy'] = entropy_loss
+        return loss_dict
 
 
 class ConcatSoftPositionEmbed(SoftPositionEmbed):
