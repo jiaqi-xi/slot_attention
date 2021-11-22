@@ -340,18 +340,20 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
 
     def _build_decoder(self):
         # Build Decoder
+        hidden_dims = list(self.dec_hidden_dims)
+        hidden_dims.insert(0, hidden_dims[-1])
         if self.dec_pos_size is not None:
             self.decoder_pos_embedding = ConcatSoftPositionEmbed(
                 3, self.dec_pos_size, self.dec_resolution)
-            self.dec_hidden_dims[-1] += self.dec_pos_size
+            hidden_dims[-1] += self.dec_pos_size
 
         modules = []
-        for i in range(len(self.dec_hidden_dims) - 1, -1, -1):
+        for i in range(len(hidden_dims) - 1, 0, -1):
             modules.append(
                 nn.Sequential(
                     nn.ConvTranspose2d(
-                        self.dec_hidden_dims[i],
-                        self.dec_hidden_dims[i - 1],
+                        hidden_dims[i],
+                        hidden_dims[i - 1],
                         kernel_size=self.dec_kernel_size,
                         stride=2,
                         padding=self.dec_kernel_size // 2,

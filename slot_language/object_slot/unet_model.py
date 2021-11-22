@@ -36,6 +36,7 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
         enc_pos_enc: bool = False,
         dec_resolution: Tuple[int, int] = (8, 8),
+        use_maxpool: bool = False,
         use_entropy_loss: bool = False,
         use_bg_sep_slot: bool = False,
     ):
@@ -50,7 +51,7 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         self.enc_resolution = resolution
         self.dec_resolution = dec_resolution
         self.use_double_conv = False
-        self.use_maxpool = False
+        self.use_maxpool = use_maxpool
         self.use_bilinear = True
         self.use_bn = False
         self.out_features = slot_size
@@ -239,8 +240,13 @@ class SemPosSepUNetSlotAttentionModel(UNetSlotAttentionModel):
                  dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),
                  enc_pos_enc: bool = False,
                  dec_resolution: Tuple[int, int] = (8, 8),
+                 use_maxpool: bool = False,
                  use_entropy_loss: bool = False,
                  use_bg_sep_slot: bool = False):
+
+        self.enc_pos_size = enc_pos_size
+        self.dec_pos_size = dec_pos_size
+
         super().__init__(
             clip_model,
             use_clip_vision,
@@ -256,16 +262,14 @@ class SemPosSepUNetSlotAttentionModel(UNetSlotAttentionModel):
             dec_channels=dec_channels,
             enc_pos_enc=enc_pos_enc,
             dec_resolution=dec_resolution,
+            use_maxpool=use_maxpool,
             use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot)
-
-        self.enc_pos_size = enc_pos_size
-        self.dec_pos_size = dec_pos_size
 
         # Build Encoder related modules
         self.pos_ratio = enc_pos_size / slot_size
         self.encoder_pos_embedding = ConcatSoftPositionEmbed(
-            3, int(self.enc_channels * self.pos_ratio), self.enc_resolution)
+            3, int(self.out_features * self.pos_ratio), self.enc_resolution)
         del self.encoder_out_layer  # no mixing pos and sem
 
         self.slot_attention = SemPosSepSlotAttention(
@@ -277,9 +281,22 @@ class SemPosSepUNetSlotAttentionModel(UNetSlotAttentionModel):
             pos_dim=self.enc_pos_size,
         )
 
+    def _get_encoder_out(self, img):
+        """Encode image, potentially add pos enc, apply MLP."""
+        if self.use_clip_vision:
+            encoder_out = self.clip_model.encode_image(
+                img, global_feats=False, downstream=True)  # BCDD
+            encoder_out = encoder_out.type(self.dtype)
+        else:
+            encoder_out = self.encoder(img)
+        encoder_out = self.encoder_pos_embedding(encoder_out).\
+            permute(0, 2, 3, 1).flatten(1, 2)
+        return encoder_out  # [B, H*W, C]
+
     def _build_decoder(self, channels, kernel_size):
         if self.dec_pos_size is not None:
             self.decoder_pos_embedding = ConcatSoftPositionEmbed(
                 3, self.dec_pos_size, self.dec_resolution)
+            channels = list(channels)
             channels[0] += self.dec_pos_size
         return super()._build_decoder(channels, kernel_size)

@@ -23,6 +23,8 @@ class SlotAttentionParams:
     entropy_loss_w: float = 1.0
     # whether treat bg slot separately
     use_bg_sep_slot: bool = False
+    # UNet settings
+    use_maxpool: bool = False  # by default use Conv down
 
     # setting about sem-pos separate model
     use_sempos_sep: bool = False

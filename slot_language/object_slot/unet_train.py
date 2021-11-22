@@ -38,6 +38,8 @@ def build_slot_attention_model(params: SlotAttentionParams):
             dec_channels=params.dec_channels,
             enc_pos_enc=params.enc_pos_enc,
             dec_resolution=params.dec_resolution,
+            use_maxpool=False
+            if not hasattr(params, 'use_maxpool') else params.use_maxpool,
             use_entropy_loss=params.use_entropy_loss,
             use_bg_sep_slot=params.use_bg_sep_slot,
         )
@@ -58,6 +60,8 @@ def build_slot_attention_model(params: SlotAttentionParams):
             dec_channels=params.dec_channels,
             enc_pos_enc=params.enc_pos_enc,
             dec_resolution=params.dec_resolution,
+            use_maxpool=False
+            if not hasattr(params, 'use_maxpool') else params.use_maxpool,
             use_entropy_loss=params.use_entropy_loss,
             use_bg_sep_slot=params.use_bg_sep_slot,
         )
@@ -134,8 +138,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         val_check_interval=args.eval_interval,
         callbacks=[
             LearningRateMonitor("step"),
-            PosSlotImageLogCallback()
-            if params.use_slot_pos_emb else ImageLogCallback(),
+            ImageLogCallback(),
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],

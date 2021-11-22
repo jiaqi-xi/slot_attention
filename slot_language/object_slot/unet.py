@@ -94,13 +94,14 @@ class UNetDown(nn.Module):
                  use_maxpool, use_bn):
         super().__init__()
 
-        self.downsample = nn.MaxPool2d(2) if use_maxpool else \
-            nn.Sequential(
-                nn.AvgPool2d(2),
-                nn.Conv2d(in_channels, out_channels, kernel_size=1),
-            )
-        self.conv = Conv(
+        self.downsample = nn.MaxPool2d(2) if use_maxpool else nn.Conv2d(
             in_channels,
+            out_channels,
+            kernel_size,
+            stride=2,
+            padding=kernel_size // 2)
+        self.conv = Conv(
+            in_channels if use_maxpool else out_channels,
             out_channels,
             use_double_conv,
             kernel_size=kernel_size,
