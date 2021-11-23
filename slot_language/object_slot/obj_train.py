@@ -56,7 +56,11 @@ def build_text2slot_model(params: SlotAttentionParams):
             params.clip_text_channel,
             params.slot_size,
             params.text2slot_hidden_sizes,
-            use_bn=False)
+            use_bn=False,
+            normalize_slots=False if not hasattr(params, 'normalize_slots')
+            else params.normalize_slots,
+            random_bg_slot=False if not hasattr(params, 'random_bg_slot') else
+            params.random_bg_slot)
     return text2slot_model
 
 
