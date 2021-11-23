@@ -186,6 +186,7 @@ class ObjMLPText2Slot(nn.Module):
                  hidden_sizes: Tuple[int] = (256, ),
                  use_bn: bool = False):
         super(ObjMLPText2Slot, self).__init__()
+        self.in_channels = in_channels
         self.slot_size = slot_size
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 

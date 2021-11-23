@@ -248,6 +248,19 @@ class SemPosBgSepSlotAttention(BgSepSlotAttention):
             SepLinear(mlp_hidden_size, self.mlp_hidden_size, self.slot_size),
         )
 
+        # FC to keep the output slot_size and mix sem and pos information
+        self.out_mlp = nn.Sequential(
+            nn.Linear(self.slot_size, slot_size),
+            nn.ReLU(),
+            nn.Linear(slot_size, slot_size),
+        )
+        # for bg
+        self.bg_out_mlp = nn.Sequential(
+            nn.Linear(self.slot_size, slot_size),
+            nn.ReLU(),
+            nn.Linear(slot_size, slot_size),
+        )
+
     def _init_slots(self, batch_size, slots_mu, slots_log_sigma):
         # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
         assert len(slots_mu.shape) == 3, 'wrong slot embedding shape!'
@@ -259,7 +272,7 @@ class SemPosBgSepSlotAttention(BgSepSlotAttention):
                         self.pos_dim).type_as(slots_mu).detach()
         ],
                           dim=-1)
-        return slots[..., :-1], slots[..., -1:]
+        return slots[:, :-1], slots[:, -1:]
 
     def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
         # [B, num_slots, C]
@@ -267,7 +280,11 @@ class SemPosBgSepSlotAttention(BgSepSlotAttention):
         slot_size = int(self.slot_size / (1 + self.pos_ratio))
         assert slots.shape[-1] - slot_size == self.pos_dim
         sem_slots, pos_slots = slots[..., :slot_size], slots[..., slot_size:]
-        return self.out_mlp(slots), sem_slots, pos_slots
+        slots = torch.cat(
+            [self.out_mlp(slots[:, :-1]),
+             self.bg_out_mlp(slots[:, -1:])],
+            dim=1)
+        return slots, sem_slots, pos_slots
 
 
 class ObjSlotAttentionModel(SlotAttentionModel):
@@ -502,13 +519,10 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         recon_combined, recons, masks, slots = self.decode(
             slots, x['img'].shape)
 
-        if not self.training:
-            return recon_combined, recons, masks, slots
-        return recon_combined, recons, masks, slots, sem_slots, pos_slots
+        return recon_combined, recons, masks, (slots, sem_slots, pos_slots)
 
     def loss_function(self, input):
-        recon_combined, recons, masks, slots, \
-            sem_slots, pos_slots = self.forward(input)
+        recon_combined, recons, masks, slots = self.forward(input)
         loss = F.mse_loss(recon_combined, input['img'])
         loss_dict = {
             "recon_loss": loss,
