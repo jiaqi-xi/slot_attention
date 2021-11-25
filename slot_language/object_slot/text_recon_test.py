@@ -9,7 +9,7 @@ import torch
 from torchvision import utils as vutils
 
 from text_recon_train import build_slot_attention_model, build_data_module
-from text_recon_method import ObjTwoClsSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from text_recon_method import ObjTextReconSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from text_recon_params import SlotAttentionParams
 
 sys.path.append('../')

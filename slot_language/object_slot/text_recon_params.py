@@ -49,6 +49,8 @@ class SlotAttentionParams:
     text2slot_arch: str = 'MLP'  # or 'Transformer' or 'DETR'
     # for MLP
     text2slot_hidden_sizes: Tuple[int] = (512, )
+    normalize_slots: bool = False
+    random_bg_slot: bool = False  # default use trainable background slot
 
     # data
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"

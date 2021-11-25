@@ -22,38 +22,34 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
     def __init__(
         self,
         resolution: Tuple[int, int],
-        num_slots: int,
-        num_iterations: int,
         num_clips: int,
-        in_channels: int = 3,
+        num_slots: int,
+        num_iterations: int = 2,
         kernel_size: int = 5,
-        slot_size: int = 64,
-        hidden_dims: Tuple[int, ...] = (64, 64, 64, 64),
+        slot_size: int = 128,
+        out_features: int = 64,
+        enc_hiddens: Tuple[int, ...] = (3, 32, 32, 32, 32),
+        dec_hiddens: Tuple[int, ...] = (128, 64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
         use_deconv: bool = True,
-        empty_cache: bool = False,
-        slot_mlp_size: int = 128,
-        learnable_slot=False,
+        slot_mlp_size: int = 256,
+        learnable_slot: bool = True,
         stop_recur_slot_grad: bool = False,
         use_entropy_loss: bool = False,
     ):
-        super(RecurrentSlotAttentionModel,
-              self).__init__(resolution, num_slots, num_iterations,
-                             in_channels, kernel_size, slot_size, hidden_dims,
-                             decoder_resolution, use_deconv, empty_cache,
-                             slot_mlp_size, learnable_slot, use_entropy_loss)
+        super().__init__(resolution, num_slots, num_iterations, kernel_size,
+                         slot_size, out_features, enc_hiddens, dec_hiddens,
+                         decoder_resolution, use_deconv, slot_mlp_size,
+                         learnable_slot, use_entropy_loss)
 
         self.num_clips = num_clips
         self.stop_recur_slot_grad = stop_recur_slot_grad
 
-    def forward(self, x, num_clips=None):
-        if self.empty_cache:
-            torch.cuda.empty_cache()
+    def forward(self, x):
+        torch.cuda.empty_cache()
 
-        # if provided, then it overwrite self.num_clips
-        if num_clips is None:
-            num_clips = self.num_clips
-
+        num_clips = x.shape[1]
+        x = x.flatten(0, 1)
         batch_size, num_channels, height, width = x.shape
 
         # TODO: for encoding, here we still use per-frame CNN

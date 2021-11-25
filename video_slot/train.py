@@ -9,12 +9,58 @@ import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from data import CLEVRVideoFrameDataModule
+from data import CLEVRVideoFrameDataModule, CATERVideoFrameDataModule
 from method import SlotAttentionVideoMethod as SlotAttentionMethod
 from utils import VideoLogCallback, ImageLogCallback, rescale
-from model import SlotAttentionModel, ConvAutoEncoder, PerceptualLoss
 from video_model import RecurrentSlotAttentionModel
 from params import SlotAttentionParams
+
+
+def build_datamodule(params: SlotAttentionParams):
+    clevr_transforms = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Lambda(rescale),  # rescale between -1 and 1
+        # TODO: no center crop
+        transforms.Resize(params.resolution),
+    ])
+    if 'cater' in params.data_root.lower():
+        print('Training on CATER dataset')
+        datamodule = CATERVideoFrameDataModule
+    else:
+        datamodule = CLEVRVideoFrameDataModule
+    clevr_datamodule = datamodule(
+        data_root=params.data_root,
+        max_n_objects=params.num_slots - 1,
+        train_batch_size=params.batch_size,
+        val_batch_size=params.val_batch_size,
+        clevr_transforms=clevr_transforms,
+        num_train_images=params.num_train_images,
+        num_val_images=params.num_val_images,
+        num_workers=params.num_workers,
+        sample_clip_num=params.sample_clip_num,
+    )
+    return clevr_datamodule
+
+
+def build_model(params: SlotAttentionParams):
+    model = RecurrentSlotAttentionModel(
+        resolution=params.resolution,
+        num_clips=params.sample_clip_num,
+        num_slots=params.num_slots,
+        num_iterations=params.num_iterations,
+        kernel_size=params.kernel_size,
+        slot_size=params.slot_size,
+        out_features=params.out_features,
+        enc_hiddens=params.enc_hiddens,
+        dec_hiddens=params.dec_hiddens,
+        decoder_resolution=params.decoder_resolution,
+        use_deconv=params.use_deconv,
+        slot_mlp_size=params.slot_mlp_size,
+        learnable_slot=params.learnable_slot,
+        stop_recur_slot_grad=params.stop_recur_slot_grad,
+        use_entropy_loss=params.use_entropy_loss,
+    )
+    return model
 
 
 def main(params: Optional[SlotAttentionParams] = None):
@@ -37,83 +83,16 @@ def main(params: Optional[SlotAttentionParams] = None):
         if args.weight:
             print(f'INFO: loading checkpoint {args.weight}')
 
-    clevr_transforms = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Lambda(rescale),  # rescale between -1 and 1
-        # TODO: no center crop
-        transforms.Resize(params.resolution),
-    ])
-
-    clevr_datamodule = CLEVRVideoFrameDataModule(
-        data_root=params.data_root,
-        max_n_objects=params.num_slots - 1,
-        train_batch_size=params.batch_size,
-        val_batch_size=params.val_batch_size,
-        clevr_transforms=clevr_transforms,
-        num_train_images=params.num_train_images,
-        num_val_images=params.num_val_images,
-        num_workers=params.num_workers,
-        sample_clip_num=params.sample_clip_num,
-    )
-
-    print('Not using max_object_num constraint here!')
-    """
-    print(
-        f"Training set size (images must have {params.num_slots - 1} "
-        "objects):", len(clevr_datamodule.train_dataset))
-    """
-
-    if params.recurrent_slot_attention:
-        model = RecurrentSlotAttentionModel(
-            resolution=params.resolution,
-            num_slots=params.num_slots,
-            num_iterations=params.num_iterations,
-            num_clips=params.sample_clip_num,
-            kernel_size=params.kernel_size,
-            slot_size=params.slot_size,
-            hidden_dims=params.hidden_dims,
-            decoder_resolution=params.decoder_resolution,
-            use_deconv=params.use_deconv,
-            empty_cache=params.empty_cache,
-            slot_mlp_size=params.slot_mlp_size,
-            learnable_slot=params.learnable_slot,
-            stop_recur_slot_grad=params.stop_recur_slot_grad,
-            use_entropy_loss=params.use_entropy_loss,
-        )
-    else:
-        model = SlotAttentionModel(
-            resolution=params.resolution,
-            num_slots=params.num_slots,
-            num_iterations=params.num_iterations,
-            kernel_size=params.kernel_size,
-            slot_size=params.slot_size,
-            hidden_dims=params.hidden_dims,
-            decoder_resolution=params.decoder_resolution,
-            use_deconv=params.use_deconv,
-            empty_cache=params.empty_cache,
-            slot_mlp_size=params.slot_mlp_size,
-            learnable_slot=params.learnable_slot,
-            use_entropy_loss=params.use_entropy_loss,
-        )
-    if params.perceptual_loss:
-        predictor = PerceptualLoss(params.perceptual_loss)
-    else:
-        '''
-        predictor = ConvAutoEncoder(
-            in_channels=1 if params.pred_mask else 3,
-            num_slots=params.num_slots,
-            use_softmax=params.pred_mask)
-        '''
-        predictor = None
+    clevr_datamodule = build_datamodule(params)
+    model = build_model(params)
+    # TODO: could do future prediction here
+    predictor = None
 
     method = SlotAttentionMethod(
         model=model,
         predictor=predictor,
         datamodule=clevr_datamodule,
-        params=params,
-        entropy_loss_w=params.entropy_loss_w,
-        pred_mask=params.pred_mask,
-        stop_future_grad=params.stop_future_grad)
+        params=params)
 
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params
@@ -147,6 +126,7 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     trainer = Trainer(
         logger=logger if params.is_logger_enabled else False,
+        gradient_clip_val=params.grad_clip_norm,
         # TODO: 'ddp' doesn't work on Vector cluster!
         accelerator="dp" if params.gpus > 1 else None,
         num_sanity_val_steps=params.num_sanity_val_steps,
@@ -160,6 +140,7 @@ def main(params: Optional[SlotAttentionParams] = None):
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],
+        profiler='simple',
         precision=16 if args.fp16 else 32,
         resume_from_checkpoint=args.weight if args.weight else None,
     )
