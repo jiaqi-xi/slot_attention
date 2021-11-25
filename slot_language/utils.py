@@ -72,26 +72,6 @@ class ImageLogCallback(Callback):
                     commit=False)
 
 
-class PosSlotImageLogCallback(Callback):
-
-    def on_validation_epoch_end(self, trainer, pl_module):
-        """Called when the train epoch ends."""
-
-        if trainer.logger:
-            with torch.no_grad():
-                pl_module.eval()
-                images, masks, all_masks = pl_module.sample_images()
-                trainer.logger.experiment.log(
-                    {
-                        "images": [
-                            wandb.Image(images),
-                            wandb.Image(masks),
-                            wandb.Image(all_masks)
-                        ]
-                    },
-                    commit=False)
-
-
 class TwoStreamImageLogCallback(Callback):
 
     def on_validation_epoch_end(self, trainer, pl_module):

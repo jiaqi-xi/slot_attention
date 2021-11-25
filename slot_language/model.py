@@ -297,7 +297,8 @@ class BgSepSlotAttention(nn.Module):
             # so flatten batch and slots dimension
             fg_slots = self.gru(
                 fg_updates.reshape(bs * (self.num_slots - 1), self.slot_size),
-                fg_slots_prev.reshape(bs * (self.num_slots - 1), self.slot_size),
+                fg_slots_prev.reshape(bs * (self.num_slots - 1),
+                                      self.slot_size),
             )
             fg_slots = fg_slots.view(bs, self.num_slots - 1, self.slot_size)
             fg_slots = fg_slots + self.mlp(fg_slots)
@@ -330,34 +331,40 @@ class SlotAttentionModel(nn.Module):
         resolution: Tuple[int, int],
         num_slots: int,
         num_iterations: int,
-        enc_resolution: Tuple[int, int] = (7, 7),
-        enc_channels: int = 3,  # output channel of pre-trained encoder
-        enc_pos_enc: bool = False,  # because CLIP's vision encoder already has?
         slot_size: int = 64,
-        dec_kernel_size: int = 5,
-        dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
-        dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224
         slot_mlp_size: int = 128,
-        use_word_set: bool = False,
-        use_padding_mask: bool = False,
+        out_features: int = 64,
+        kernel_size: int = 5,
+        enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64),
+        dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
+        dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224
         use_entropy_loss: bool = False,
         use_bg_sep_slot: bool = False,
+        enc_resolution: Tuple[int, int] = (7, 7),  # output res of encoder
+        visual_feats_channels: int = 512,  # output channel of encoder
+        use_word_set: bool = False,
+        use_padding_mask: bool = False,
     ):
         super().__init__()
-        self.resolution = resolution
         self.num_slots = num_slots
         self.num_iterations = num_iterations
-        self.enc_resolution = enc_resolution
-        self.enc_channels = enc_channels
-        self.enc_pos_enc = enc_pos_enc
-        self.dec_kernel_size = dec_kernel_size
         self.slot_size = slot_size
-        self.dec_hidden_dims = dec_hidden_dims
-        self.dec_resolution = dec_resolution
         self.slot_mlp_size = slot_mlp_size
+        self.out_features = out_features
+
+        self.resolution = resolution
+        self.kernel_size = kernel_size
+        self.enc_channels = enc_channels
+        self.dec_channels = dec_channels
+        self.dec_resolution = dec_resolution
+
+        self.enc_resolution = enc_resolution
+        self.visual_feats_channels = visual_feats_channels
         self.use_word_set = use_word_set
         self.use_padding_mask = use_padding_mask
-        self.out_features = self.dec_hidden_dims[-1]
+
+        self.use_bg_sep_slot = use_bg_sep_slot
+        self.use_entropy_loss = use_entropy_loss  # -p*log(p)
 
         # Pre-trained CLIP model, we freeze it here
         self.clip_model = clip_model.eval()
@@ -365,65 +372,82 @@ class SlotAttentionModel(nn.Module):
             p.requires_grad = False
         self.use_clip_vision = use_clip_vision
         self.use_clip_text = use_clip_text
+        if not self.use_clip_vision:
+            self.enc_resolution = self.resolution
+            self.visual_feats_channels = self.enc_channels[-1]
 
         # Text2Slot that generates slot embedding from text features
         if self.use_clip_text:
             assert text2slot_model is not None
         self.text2slot_model = text2slot_model
 
+        self._build_encoder()
+        self._build_decoder()
+        self._build_slot_attention()
+
+    def _build_slot_attention(self):
+        slot_attn = BgSepSlotAttention if self.use_bg_sep_slot else SlotAttention
+        self.slot_attention = slot_attn(
+            in_features=self.out_features,
+            num_iterations=self.num_iterations,
+            num_slots=self.num_slots,
+            slot_size=self.slot_size,
+            mlp_hidden_size=self.slot_mlp_size,
+        )
+
+    def _build_encoder(self):
         # we build an encoder as in original Slot Attention paper
-        if not use_clip_vision:
-            # self.enc_pos_enc = True
-            self.enc_resolution = self.resolution
-            self.enc_channels = self.out_features
+        if not self.use_clip_vision:
             modules = []
-            channels = 3  # RGB in_channels
             # Build Encoder
-            for h_dim in self.dec_hidden_dims:
+            for i in range(len(self.enc_channels) - 1):
                 modules.append(
                     nn.Sequential(
                         nn.Conv2d(
-                            channels,
-                            out_channels=h_dim,
-                            kernel_size=self.dec_kernel_size,
+                            self.enc_channels[i],
+                            out_channels=self.enc_channels[i + 1],
+                            kernel_size=self.kernel_size,
                             stride=1,
-                            padding=self.dec_kernel_size // 2,
+                            padding=self.kernel_size // 2,
                         ),
                         nn.ReLU(),
                     ))
-                channels = h_dim
             self.encoder = nn.Sequential(*modules)
 
         # Build Encoder related modules
-        if self.enc_pos_enc:
-            self.encoder_pos_embedding = SoftPositionEmbed(
-                3, self.enc_channels, self.enc_resolution)
+        self.encoder_pos_embedding = SoftPositionEmbed(
+            3, self.visual_feats_channels, self.enc_resolution)
         self.encoder_out_layer = nn.Sequential(
-            nn.Linear(self.enc_channels, self.out_features),
+            nn.LayerNorm(self.visual_feats_channels),  # from SAVi
+            nn.Linear(self.visual_feats_channels, self.out_features),
             nn.ReLU(),
             nn.Linear(self.out_features, self.out_features),
         )
 
+    def _build_decoder(self):
         # Build Decoder
+        assert self.dec_channels[0] == self.slot_size
         modules = []
-
-        in_size = dec_resolution[0]
+        in_size = self.dec_resolution[0]
         out_size = in_size
-
-        for i in range(len(self.dec_hidden_dims) - 1, -1, -1):
+        stride = 2
+        for i in range(len(self.dec_channels) - 1):
             modules.append(
                 nn.Sequential(
                     nn.ConvTranspose2d(
-                        self.dec_hidden_dims[i],
-                        self.dec_hidden_dims[i - 1],
-                        kernel_size=self.dec_kernel_size,
-                        stride=2,
-                        padding=self.dec_kernel_size // 2,
-                        output_padding=1,
+                        self.dec_channels[i],
+                        self.dec_channels[i + 1],
+                        kernel_size=self.kernel_size,
+                        stride=stride,
+                        padding=self.kernel_size // 2,
+                        output_padding=stride - 1,
                     ),
                     nn.ReLU(),
                 ))
-            out_size = conv_transpose_out_shape(out_size, 2, 2, 5, 1)
+            out_size = conv_transpose_out_shape(out_size, stride, 2, 5,
+                                                stride - 1)
+            if out_size == self.resolution[0]:
+                stride = 1
 
         assert_shape(
             self.resolution,
@@ -434,41 +458,17 @@ class SlotAttentionModel(nn.Module):
 
         # same convolutions
         modules.append(
-            nn.Sequential(
-                nn.ConvTranspose2d(
-                    self.out_features,
-                    self.out_features,
-                    kernel_size=self.dec_kernel_size,
-                    stride=1,
-                    padding=self.dec_kernel_size // 2,
-                    output_padding=0,
-                ),
-                nn.ReLU(),
-                nn.ConvTranspose2d(
-                    self.out_features,
-                    4,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    output_padding=0,
-                ),
+            nn.Conv2d(
+                self.dec_hiddens[-1],
+                4,
+                kernel_size=3,
+                stride=1,
+                padding=1,
             ))
 
         self.decoder = nn.Sequential(*modules)
-        self.decoder_pos_embedding = SoftPositionEmbed(3, self.out_features,
+        self.decoder_pos_embedding = SoftPositionEmbed(3, self.slot_size,
                                                        self.dec_resolution)
-
-        self.use_bg_sep_slot = use_bg_sep_slot
-        slot_attn = BgSepSlotAttention if use_bg_sep_slot else SlotAttention
-        self.slot_attention = slot_attn(
-            in_features=self.out_features,
-            num_iterations=self.num_iterations,
-            num_slots=self.num_slots,
-            slot_size=self.slot_size,
-            mlp_hidden_size=self.slot_mlp_size,
-        )
-
-        self.use_entropy_loss = use_entropy_loss  # -p*log(p)
 
     def _get_encoder_out(self, img):
         """Encode image, potentially add pos enc, apply MLP."""
@@ -478,9 +478,7 @@ class SlotAttentionModel(nn.Module):
             encoder_out = encoder_out.type(self.dtype)
         else:
             encoder_out = self.encoder(img)
-        # may not applying pos_enc because Encoder in CLIP already does so
-        if self.enc_pos_enc:
-            encoder_out = self.encoder_pos_embedding(encoder_out)
+        encoder_out = self.encoder_pos_embedding(encoder_out)
         # `encoder_out` has shape: [batch_size, C, height, width]
         encoder_out = torch.flatten(encoder_out, start_dim=2, end_dim=3)
         # `encoder_out` has shape: [batch_size, C, height*width]

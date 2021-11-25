@@ -33,16 +33,18 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
                  cls_mlps: Tuple[int, ...] = (),
                  hard_visual_masking: bool = False,
                  recon_from: str = 'feats',
-                 enc_resolution: Tuple[int, int] = (128, 128),
-                 enc_channels: int = 3,
-                 enc_pos_enc: bool = False,
                  slot_size: int = 64,
-                 dec_kernel_size: int = 5,
-                 dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
-                 dec_resolution: Tuple[int, int] = (8, 8),
                  slot_mlp_size: int = 128,
+                 out_features: int = 64,
+                 kernel_size: int = 5,
+                 use_unet: bool = False,
+                 enc_channels: Tuple[int, ...] = ...,
+                 dec_channels: Tuple[int, ...] = ...,
+                 dec_resolution: Tuple[int, int] = ...,
                  use_entropy_loss: bool = False,
-                 use_bg_sep_slot: bool = False):
+                 use_bg_sep_slot: bool = False,
+                 enc_resolution: Tuple[int, int] = ...,
+                 visual_feats_channels: int = 512):
         super().__init__(
             clip_model,
             use_clip_vision,
@@ -51,16 +53,18 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             resolution,
             num_slots,
             num_iterations,
-            enc_resolution=enc_resolution,
-            enc_channels=enc_channels,
-            enc_pos_enc=enc_pos_enc,
             slot_size=slot_size,
-            dec_kernel_size=dec_kernel_size,
-            dec_hidden_dims=dec_hidden_dims,
-            dec_resolution=dec_resolution,
             slot_mlp_size=slot_mlp_size,
+            out_features=out_features,
+            kernel_size=kernel_size,
+            use_unet=use_unet,
+            enc_channels=enc_channels,
+            dec_channels=dec_channels,
+            dec_resolution=dec_resolution,
             use_entropy_loss=use_entropy_loss,
-            use_bg_sep_slot=use_bg_sep_slot)
+            use_bg_sep_slot=use_bg_sep_slot,
+            enc_resolution=enc_resolution,
+            visual_feats_channels=visual_feats_channels)
 
         self.color_tokens = torch.tensor(
             [1746, 2866, 1470, 7048, 1901, 5496, 736, 4481])
@@ -85,9 +89,7 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
         else:
             encoder_out = self.encoder(img)
         img_feats = encoder_out  # Conv features without pos_enc
-        # may not applying pos_enc because Encoder in CLIP already does so
-        if self.enc_pos_enc:
-            encoder_out = self.encoder_pos_embedding(encoder_out)
+        encoder_out = self.encoder_pos_embedding(encoder_out)
         # `encoder_out` has shape: [batch_size, C, height, width]
         encoder_out = torch.flatten(encoder_out, start_dim=2, end_dim=3)
         # `encoder_out` has shape: [batch_size, C, height*width]
@@ -229,16 +231,18 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
                  hard_visual_masking: bool = False,
                  normalize_feats: bool = False,
                  recon_from: str = 'feats',
-                 enc_resolution: Tuple[int, int] = (128, 128),
-                 enc_channels: int = 3,
-                 enc_pos_enc: bool = False,
                  slot_size: int = 64,
-                 dec_kernel_size: int = 5,
-                 dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
-                 dec_resolution: Tuple[int, int] = (8, 8),
                  slot_mlp_size: int = 128,
+                 out_features: int = 64,
+                 kernel_size: int = 5,
+                 use_unet: bool = False,
+                 enc_channels: Tuple[int, ...] = ...,
+                 dec_channels: Tuple[int, ...] = ...,
+                 dec_resolution: Tuple[int, int] = ...,
                  use_entropy_loss: bool = False,
-                 use_bg_sep_slot: bool = False):
+                 use_bg_sep_slot: bool = False,
+                 enc_resolution: Tuple[int, int] = ...,
+                 visual_feats_channels: int = 512):
         ObjSlotAttentionModel.__init__(
             self,
             clip_model,
@@ -248,16 +252,18 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
             resolution,
             num_slots,
             num_iterations,
-            enc_resolution=enc_resolution,
-            enc_channels=enc_channels,
-            enc_pos_enc=enc_pos_enc,
             slot_size=slot_size,
-            dec_kernel_size=dec_kernel_size,
-            dec_hidden_dims=dec_hidden_dims,
-            dec_resolution=dec_resolution,
             slot_mlp_size=slot_mlp_size,
+            out_features=out_features,
+            kernel_size=kernel_size,
+            use_unet=use_unet,
+            enc_channels=enc_channels,
+            dec_channels=dec_channels,
+            dec_resolution=dec_resolution,
             use_entropy_loss=use_entropy_loss,
-            use_bg_sep_slot=use_bg_sep_slot)
+            use_bg_sep_slot=use_bg_sep_slot,
+            enc_resolution=enc_resolution,
+            visual_feats_channels=visual_feats_channels)
 
         self.recon_mlp = build_mlps(self.slot_size, recon_mlps,
                                     self.text2slot_model.in_channels)
@@ -276,8 +282,7 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
             encoder_out = self.encoder(img)
         img_feats = encoder_out  # Conv features without pos_enc
         # may not applying pos_enc because Encoder in CLIP already does so
-        if self.enc_pos_enc:
-            encoder_out = self.encoder_pos_embedding(encoder_out)
+        encoder_out = self.encoder_pos_embedding(encoder_out)
         # `encoder_out` has shape: [batch_size, C, height, width]
         encoder_out = torch.flatten(encoder_out, start_dim=2, end_dim=3)
         # `encoder_out` has shape: [batch_size, C, height*width]

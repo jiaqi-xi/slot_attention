@@ -143,7 +143,6 @@ class SlotAttentionModel(nn.Module):
         out_features: int = 64,
         enc_hiddens: Tuple[int, ...] = (3, 32, 32, 32, 32),
         use_unet: bool = False,
-        relu_before_pe: bool = True,
         dec_hiddens: Tuple[int, ...] = (128, 64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
         use_deconv: bool = True,
@@ -160,7 +159,6 @@ class SlotAttentionModel(nn.Module):
         self.out_features = out_features
         self.enc_hiddens = enc_hiddens
         self.use_unet = use_unet
-        self.relu_before_pe = relu_before_pe
         self.dec_hiddens = dec_hiddens
         self.use_deconv = use_deconv
         self.decoder_resolution = decoder_resolution
@@ -257,8 +255,6 @@ class SlotAttentionModel(nn.Module):
         else:
             modules = []
             for i in range(len(self.enc_hiddens) - 1):
-                act_func = nn.Identity() if (not self.relu_before_pe) and \
-                    (i == len(self.enc_hiddens) - 2) else nn.ReLU()
                 modules.append(
                     nn.Sequential(
                         nn.Conv2d(
@@ -268,7 +264,7 @@ class SlotAttentionModel(nn.Module):
                             stride=1,
                             padding=self.kernel_size // 2,
                         ),
-                        act_func,
+                        nn.ReLU(),
                     ))
             self.encoder = nn.Sequential(*modules)
 

@@ -30,7 +30,6 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         out_features: int = 64,
         enc_hiddens: Tuple[int, ...] = (3, 32, 32, 32, 32),
         use_unet: bool = False,
-        relu_before_pe: bool = True,
         dec_hiddens: Tuple[int, ...] = (128, 64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
         use_deconv: bool = True,
@@ -41,9 +40,8 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
     ):
         super().__init__(resolution, num_slots, num_iterations, kernel_size,
                          slot_size, out_features, enc_hiddens, use_unet,
-                         relu_before_pe, dec_hiddens, decoder_resolution,
-                         use_deconv, slot_mlp_size, learnable_slot,
-                         use_entropy_loss)
+                         dec_hiddens, decoder_resolution, use_deconv,
+                         slot_mlp_size, learnable_slot, use_entropy_loss)
 
         self.num_clips = num_clips
         self.stop_recur_slot_grad = stop_recur_slot_grad
@@ -72,7 +70,8 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         for clip_idx in range(0, num_clips, clip_len):
             rec_combs, recs, masks, slots = self._forward(
                 x[:, clip_idx:clip_idx + clip_len], prev_slots)
-            all_rec_combs.append(rec_combs.unflatten(0, (B, -1)).cpu().detach())
+            all_rec_combs.append(
+                rec_combs.unflatten(0, (B, -1)).cpu().detach())
             all_recs.append(recs.unflatten(0, (B, -1)).cpu().detach())
             all_masks.append(masks.unflatten(0, (B, -1)).cpu().detach())
             all_slots.append(slots.unflatten(0, (B, -1)).cpu().detach())

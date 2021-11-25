@@ -1,7 +1,7 @@
 import json
 import os
 import cv2
-import clip
+import numpy as np
 from PIL import Image
 from typing import Callable
 from typing import List
@@ -11,6 +11,8 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
+
+import clip
 
 
 class CLEVRVisionLanguageCLIPDataset(Dataset):
@@ -67,8 +69,10 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
 
         self.num_videos = len(self.files)
         self.clip_len = clip_len
-        self.base_num = self.clip_len  # for video/frame_idx calculation
-        self.val_divide_num = 2 if self.split == 'val' else 1
+        if self.split == 'train':
+            self.base_num = clip_len
+        else:
+            self.base_num = 1
         self.is_video = is_video
 
         if object_only:
@@ -264,15 +268,15 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         return img_paths, all_annos
 
     def _get_idx(self, index):
-        if self.is_video:
-            return index // self.base_num, index % self.base_num
-        video_idx = index // (self.base_num // self.val_divide_num)
-        frame_idx = index % (self.base_num //
-                             self.val_divide_num) * self.val_divide_num
+        video_idx = index // self.base_num
+        frame_idx = index % self.base_num
+        if self.split != 'train' and not self.is_video:
+            # random sample a frame_idx
+            frame_idx = np.random.choice(self.clip_len)
         return video_idx, frame_idx
 
     def __len__(self):
-        return len(self.files) * (self.base_num // self.val_divide_num)
+        return self.num_videos * self.base_num
 
 
 class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):

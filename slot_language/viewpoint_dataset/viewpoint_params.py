@@ -30,7 +30,6 @@ class SlotAttentionParams:
     enc_resolution: Tuple[int, int] = resolution  # image size
     clip_vision_channel: int = 64
     clip_text_channel: int = 512
-    enc_pos_enc: bool = True
 
     # Text2Slot model
     use_text2slot: bool = True

@@ -6,6 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from clip import CLIP
+from unet import UNet
 from obj_utils import SepLinear, SepLayerNorm, SepGRUCell
 
 sys.path.append('../')
@@ -289,24 +290,28 @@ class SemPosBgSepSlotAttention(BgSepSlotAttention):
 
 class ObjSlotAttentionModel(SlotAttentionModel):
 
-    def __init__(self,
-                 clip_model: CLIP,
-                 use_clip_vision: bool,
-                 use_clip_text: bool,
-                 text2slot_model: nn.Module,
-                 resolution: Tuple[int, int],
-                 num_slots: int,
-                 num_iterations: int,
-                 enc_resolution: Tuple[int, int] = (128, 128),
-                 enc_channels: int = 3,
-                 enc_pos_enc: bool = False,
-                 slot_size: int = 64,
-                 dec_kernel_size: int = 5,
-                 dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
-                 dec_resolution: Tuple[int, int] = (8, 8),
-                 slot_mlp_size: int = 128,
-                 use_entropy_loss: bool = False,
-                 use_bg_sep_slot: bool = False):
+    def __init__(
+        self,
+        clip_model: CLIP,
+        use_clip_vision: bool,
+        use_clip_text: bool,
+        text2slot_model: nn.Module,
+        resolution: Tuple[int, int],
+        num_slots: int,
+        num_iterations: int,
+        slot_size: int = 64,
+        slot_mlp_size: int = 128,
+        out_features: int = 64,
+        kernel_size: int = 5,
+        use_unet: bool = False,
+        enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64),
+        dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
+        dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224,
+        use_entropy_loss: bool = False,
+        use_bg_sep_slot: bool = False,
+        enc_resolution: Tuple[int, int] = (7, 7),  # output res of encoder
+        visual_feats_channels: int = 512,
+    ):
         super().__init__(
             clip_model,
             use_clip_vision,
@@ -315,19 +320,26 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             resolution,
             num_slots,
             num_iterations,
-            enc_resolution=enc_resolution,
-            enc_channels=enc_channels,
-            enc_pos_enc=enc_pos_enc,
             slot_size=slot_size,
-            dec_kernel_size=dec_kernel_size,
-            dec_hidden_dims=dec_hidden_dims,
-            dec_resolution=dec_resolution,
             slot_mlp_size=slot_mlp_size,
+            out_features=out_features,
+            kernel_size=kernel_size,
+            enc_channels=enc_channels,
+            dec_channels=dec_channels,
+            dec_resolution=dec_resolution,
+            use_entropy_loss=use_entropy_loss,
+            use_bg_sep_slot=use_bg_sep_slot,
+            enc_resolution=enc_resolution,
+            visual_feats_channels=visual_feats_channels,
             use_word_set=False,
             use_padding_mask=False,
-            use_entropy_loss=use_entropy_loss,
-            use_bg_sep_slot=use_bg_sep_slot)
+        )
 
+        if use_unet:
+            assert not use_clip_vision
+        self.use_unet = use_unet
+
+    def _build_slot_attention(self):
         slot_attn = BgSepSlotAttention if \
             self.use_bg_sep_slot else SlotAttention
         # slot_attn = ObjBgSepSlotAttention if \
@@ -339,6 +351,21 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             slot_size=self.slot_size,
             mlp_hidden_size=self.slot_mlp_size,
         )
+
+    def _build_encoder(self):
+        if self.use_unet:
+            self.encoder = UNet(self.enc_channels[0], self.enc_channels[1:],
+                                self.kernel_size, False, True, True, False)
+            self.encoder_pos_embedding = SoftPositionEmbed(
+                3, self.visual_feats_channels, self.enc_resolution)
+            self.encoder_out_layer = nn.Sequential(
+                nn.LayerNorm(self.visual_feats_channels),  # from SAVi
+                nn.Linear(self.visual_feats_channels, self.out_features),
+                nn.ReLU(),
+                nn.Linear(self.out_features, self.out_features),
+            )
+        else:
+            super()._build_encoder()
 
     def _get_slot_embedding(self, tokens, paddings):
         """Encode text, generate slot embeddings.
@@ -376,25 +403,30 @@ class ObjSlotAttentionModel(SlotAttentionModel):
 
 class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
 
-    def __init__(self,
-                 clip_model: CLIP,
-                 use_clip_vision: bool,
-                 use_clip_text: bool,
-                 text2slot_model: nn.Module,
-                 resolution: Tuple[int, int],
-                 num_slots: int,
-                 num_iterations: int,
-                 enc_resolution: Tuple[int, int] = (128, 128),
-                 enc_channels: int = 3,
-                 slot_size: int = 64,
-                 enc_pos_size: int = 8,
-                 dec_pos_size: int = None,
-                 dec_kernel_size: int = 5,
-                 dec_hidden_dims: Tuple[int, ...] = (64, 64, 64, 64, 64),
-                 dec_resolution: Tuple[int, int] = (8, 8),
-                 slot_mlp_size: int = 128,
-                 use_entropy_loss: bool = False,
-                 use_bg_sep_slot: bool = False):
+    def __init__(
+        self,
+        clip_model: CLIP,
+        use_clip_vision: bool,
+        use_clip_text: bool,
+        text2slot_model: nn.Module,  # if None, then don't use it here
+        resolution: Tuple[int, int],
+        num_slots: int,
+        num_iterations: int,
+        slot_size: int = 64,
+        slot_mlp_size: int = 128,
+        out_features: int = 64,
+        kernel_size: int = 5,
+        enc_pos_size: int = 64,
+        dec_pos_size: int = None,
+        use_unet: bool = False,
+        enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64),
+        dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
+        dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224
+        use_entropy_loss: bool = False,
+        use_bg_sep_slot: bool = False,
+        enc_resolution: Tuple[int, int] = (7, 7),  # output res of encoder
+        visual_feats_channels: int = 512,
+    ):
         super().__init__(
             clip_model,
             use_clip_vision,
@@ -403,16 +435,19 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
             resolution,
             num_slots,
             num_iterations,
-            enc_resolution=enc_resolution,
-            enc_channels=enc_channels,
-            enc_pos_enc=True,
             slot_size=slot_size,
-            dec_kernel_size=dec_kernel_size,
-            dec_hidden_dims=dec_hidden_dims,
-            dec_resolution=dec_resolution,
             slot_mlp_size=slot_mlp_size,
+            out_features=out_features,
+            kernel_size=kernel_size,
+            use_unet=use_unet,
+            enc_channels=enc_channels,
+            dec_channels=dec_channels,
+            dec_resolution=dec_resolution,
             use_entropy_loss=use_entropy_loss,
-            use_bg_sep_slot=use_bg_sep_slot)
+            use_bg_sep_slot=use_bg_sep_slot,
+            enc_resolution=enc_resolution,
+            visual_feats_channels=visual_feats_channels,
+        )
 
         self.enc_pos_size = enc_pos_size
         self.dec_pos_size = dec_pos_size
@@ -420,12 +455,13 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         # Build Encoder related modules
         self.pos_ratio = enc_pos_size / slot_size
         self.encoder_pos_embedding = ConcatSoftPositionEmbed(
-            3, int(self.enc_channels * self.pos_ratio), self.enc_resolution)
+            3, int(self.visual_feats_channels * self.pos_ratio), self.enc_resolution)
         del self.encoder_out_layer  # no mixing pos and sem
 
         # build Decoder related modules
         self._build_decoder()
 
+    def _build_slot_attention(self):
         slot_attn = SemPosBgSepSlotAttention if \
             self.use_bg_sep_slot else SemPosSepSlotAttention
         self.slot_attention = slot_attn(
@@ -439,51 +475,14 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
 
     def _build_decoder(self):
         # Build Decoder
-        hidden_dims = list(self.dec_hidden_dims)
-        hidden_dims.insert(0, hidden_dims[-1])
+        if self.dec_pos_size is not None:
+            self.dec_channels[0] += self.dec_pos_size
+
+        super()._build_decoder()
+
         if self.dec_pos_size is not None:
             self.decoder_pos_embedding = ConcatSoftPositionEmbed(
                 3, self.dec_pos_size, self.dec_resolution)
-            hidden_dims[-1] += self.dec_pos_size
-
-        modules = []
-        for i in range(len(hidden_dims) - 1, 0, -1):
-            modules.append(
-                nn.Sequential(
-                    nn.ConvTranspose2d(
-                        hidden_dims[i],
-                        hidden_dims[i - 1],
-                        kernel_size=self.dec_kernel_size,
-                        stride=2,
-                        padding=self.dec_kernel_size // 2,
-                        output_padding=1,
-                    ),
-                    nn.ReLU(),
-                ))
-
-        # same convolutions
-        modules.append(
-            nn.Sequential(
-                nn.ConvTranspose2d(
-                    self.out_features,
-                    self.out_features,
-                    kernel_size=self.dec_kernel_size,
-                    stride=1,
-                    padding=self.dec_kernel_size // 2,
-                    output_padding=0,
-                ),
-                nn.ReLU(),
-                nn.ConvTranspose2d(
-                    self.out_features,
-                    4,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    output_padding=0,
-                ),
-            ))
-
-        self.decoder = nn.Sequential(*modules)
 
     def _get_encoder_out(self, img):
         """Encode image, potentially add pos enc, apply MLP."""

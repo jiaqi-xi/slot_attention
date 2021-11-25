@@ -12,17 +12,22 @@ class SlotAttentionParams:
     # dim of slots embedding
     slot_size: int = 64
     num_iterations: int = 3
+    # whether treat bg slot separately
+    use_bg_sep_slot: bool = False
     # MLP hidden size in Slot Attention
     slot_mlp_size: int = 128  # FFN after cross attention
-    dec_resolution: Tuple[int,
-                          int] = (resolution[0] // 16, resolution[1] // 16)
-    dec_kernel_size: int = 5
-    dec_channels: Tuple[int, ...] = tuple(64 for _ in range(4))
+    # UNet as encoder
+    use_unet: bool = False
+    # Conv encoder-decoder
+    out_features: int = 64
+    dec_resolution: Tuple[int, int] = (8, 8)
+    kernel_size: int = 5
+    enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64)
+    dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
+
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0
-    # whether treat bg slot separately
-    use_bg_sep_slot: bool = False
 
     # setting about sem-pos separate model
     use_sempos_sep: bool = False
@@ -35,7 +40,6 @@ class SlotAttentionParams:
     enc_resolution: Tuple[int, int] = resolution  # image size
     clip_vision_channel: int = 64
     clip_text_channel: int = 512
-    enc_pos_enc: bool = True
 
     # Text2Slot model
     use_text2slot: bool = True

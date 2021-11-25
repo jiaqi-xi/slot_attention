@@ -19,7 +19,7 @@ sys.path.append('../')
 
 from train import build_data_transforms, process_ckp
 from text_model import ObjMLPText2Slot
-from utils import VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
+from utils import VideoLogCallback, ImageLogCallback
 
 sys.path.append('../viewpoint_dataset/')
 
@@ -77,17 +77,20 @@ def build_slot_attention_model(params: SlotAttentionParams):
             resolution=params.resolution,
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
-            enc_resolution=params.enc_resolution,
-            enc_channels=params.clip_vision_channel,
             slot_size=params.slot_size,
+            slot_mlp_size=params.slot_mlp_size,
+            out_features=params.out_features,
+            kernel_size=params.kernel_size,
             enc_pos_size=params.enc_pos_size,
             dec_pos_size=params.dec_pos_size,
-            dec_kernel_size=params.dec_kernel_size,
-            dec_hidden_dims=params.dec_channels,
+            use_unet=params.use_unet,
+            enc_channels=params.enc_channels,
+            dec_channels=params.dec_channels,
             dec_resolution=params.dec_resolution,
-            slot_mlp_size=params.slot_mlp_size,
             use_entropy_loss=params.use_entropy_loss,
             use_bg_sep_slot=params.use_bg_sep_slot,
+            enc_resolution=params.enc_resolution,
+            visual_feats_channels=params.clip_vision_channel,
         )
     else:
         print('Using ObjSlotAttentionModel!')
@@ -99,16 +102,18 @@ def build_slot_attention_model(params: SlotAttentionParams):
             resolution=params.resolution,
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
-            enc_resolution=params.enc_resolution,
-            enc_channels=params.clip_vision_channel,
-            enc_pos_enc=params.enc_pos_enc,
             slot_size=params.slot_size,
-            dec_kernel_size=params.dec_kernel_size,
-            dec_hidden_dims=params.dec_channels,
-            dec_resolution=params.dec_resolution,
             slot_mlp_size=params.slot_mlp_size,
+            out_features=params.out_features,
+            kernel_size=params.kernel_size,
+            use_unet=params.use_unet,
+            enc_channels=params.enc_channels,
+            dec_channels=params.dec_channels,
+            dec_resolution=params.dec_resolution,
             use_entropy_loss=params.use_entropy_loss,
             use_bg_sep_slot=params.use_bg_sep_slot,
+            enc_resolution=params.enc_resolution,
+            visual_feats_channels=params.clip_vision_channel,
         )
     return model
 

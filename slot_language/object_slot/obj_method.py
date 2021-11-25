@@ -90,17 +90,6 @@ class ObjSlotAttentionVideoLanguageMethod(SlotAttentionVideoLanguageMethod):
             nrow=masks.shape[1],
         )  # [C, B*H, num_slots*W]
 
-        if hasattr(self.params, 'use_slot_pos_emb') and self.params.use_slot_pos_emb:
-            all_masks = slots
-            all_masks = torch.cat([all_masks] * C, dim=3)
-            all_masks = all_masks.transpose(2, 1).flatten(0, 1)
-            all_masks = vutils.make_grid(
-                all_masks.view(-1, C, H, W).cpu(),
-                normalize=False,
-                nrow=all_masks.shape[1],
-            )  # [C, B*H, num_slots*W]
-            return images, masks, all_masks
-
         return images, masks
 
     def configure_optimizers(self):

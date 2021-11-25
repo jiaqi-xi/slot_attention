@@ -80,13 +80,14 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
             'a {} {}'.format(color, shape)
             for color, shape in zip(colors, shapes)
         ]
-        # shuffle the order of objects
-        if self.split == 'train' and self.shuffle_obj:
-            np.random.shuffle(texts)
-        if self.pad_text:  # pad with some special texts e.g. 'no object'
+        # pad with some special texts, e.g. 'background'
+        if self.pad_text:
             texts = texts + [
                 self.pad_text,
             ] * (1 + self.max_n_objects - len(texts))
+        # shuffle the order of objects
+        if self.split == 'train' and self.shuffle_obj:
+            np.random.shuffle(texts)
         return texts
 
 
@@ -144,18 +145,16 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
             clip_len: int = 34,
             is_video: bool = False,
             shuffle_obj: bool = False,
+            pad_text: str = '',
             sample_clip_num: int = 2,  # loaded clips per video
     ):
         # TODO: we assume `self.max_n_objects` == 6 here!
         super().__init__(data_root, max_num_images, clip_transforms,
-                         max_n_objects, split, clip_len, is_video, shuffle_obj)
+                         max_n_objects, split, clip_len, is_video, shuffle_obj,
+                         pad_text)
         self.sample_clip_num = sample_clip_num
         if self.split == 'train':
             self.base_num = self.clip_len - (self.sample_clip_num - 1)
-        else:
-            self.base_num = self.clip_len
-        self.val_divide_num = 2 * self.sample_clip_num if \
-            self.split == 'val' else 1
 
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""
@@ -190,6 +189,14 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
             [self.clip_transforms(Image.fromarray(img)) for img in imgs],
             dim=0)
 
+    def _get_idx(self, index):
+        video_idx = index // self.base_num
+        frame_idx = index % self.base_num
+        if self.split != 'train' and not self.is_video:
+            # random sample a frame_idx
+            frame_idx = np.random.choice(self.clip_len - self.sample_clip_num)
+        return video_idx, frame_idx
+
 
 class ObjRecurCLEVRVisionLanguageCLIPDataModule(
         ObjCLEVRVisionLanguageCLIPDataModule):
@@ -203,11 +210,12 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
         num_workers: int,
         max_n_objects: int = 6,
         shuffle_obj: bool = False,
+        pad_text: str = '',
         sample_clip_num: int = 2,
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
                          clip_transforms, num_workers, max_n_objects,
-                         shuffle_obj)
+                         shuffle_obj, pad_text)
 
         self.sample_clip_num = sample_clip_num
         self.train_dataset = ObjRecurCLEVRVisionLanguageCLIPDataset(
@@ -217,6 +225,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
             max_n_objects=self.max_n_objects,
             split='train',
             shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
             sample_clip_num=self.sample_clip_num,
         )
         self.val_dataset = ObjRecurCLEVRVisionLanguageCLIPDataset(
@@ -226,6 +235,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
             max_n_objects=self.max_n_objects,
             split='val',
             shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
             sample_clip_num=self.sample_clip_num,
         )
 
@@ -245,9 +255,11 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
                  clip_len: int = 34,
                  is_video: bool = False,
                  shuffle_obj: bool = False,
+                 pad_text: str = '',
                  flip_img: bool = False):
         super().__init__(data_root, max_num_images, clip_transforms,
-                         max_n_objects, split, clip_len, is_video, shuffle_obj)
+                         max_n_objects, split, clip_len, is_video, shuffle_obj,
+                         pad_text)
         self.flip_img = flip_img
 
     def __getitem__(self, index: int):
@@ -313,6 +325,11 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
             'a {} {}'.format(color, shape)
             for color, shape in zip(colors, shapes)
         ]
+        # pad with some special texts, e.g. 'background'
+        if self.pad_text:
+            texts = texts + [
+                self.pad_text,
+            ] * (1 + self.max_n_objects - len(texts))
         # shuffle the order of objects
         if self.split == 'train':
             idx = np.arange(len(texts))
@@ -337,11 +354,12 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
         num_workers: int,
         max_n_objects: int = 6,
         shuffle_obj: bool = False,
+        pad_text: str = '',
         flip_img: bool = False,
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
                          clip_transforms, num_workers, max_n_objects,
-                         shuffle_obj)
+                         shuffle_obj, pad_text)
 
         self.flip_img = flip_img
         self.train_dataset = ObjAugCLEVRVisionLanguageCLIPDataset(
@@ -351,6 +369,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
             max_n_objects=self.max_n_objects,
             split='train',
             shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
             flip_img=self.flip_img,
         )
         self.val_dataset = ObjAugCLEVRVisionLanguageCLIPDataset(
@@ -360,5 +379,6 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
             max_n_objects=self.max_n_objects,
             split='val',
             shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
             flip_img=self.flip_img,
         )
