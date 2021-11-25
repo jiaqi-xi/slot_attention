@@ -71,7 +71,7 @@ class SlotAttentionParams:
     # optimization settings
     cosine_decay: bool = True
     lr: float = 0.0008
-    warmup_steps_pct: float = 0.02
+    warmup_steps_pct: float = 0.025
     decay_steps_pct: float = 0.2
     scheduler_gamma: float = 0.5
     weight_decay: float = 0.0

@@ -162,7 +162,8 @@ def main(params: Optional[SlotAttentionParams] = None):
         gradient_clip_val=params.grad_clip_norm,
         # TODO: 'ddp' doesn't work on Vector cluster!
         accelerator="dp" if params.gpus > 1 else None,
-        num_sanity_val_steps=params.num_sanity_val_steps,
+        num_sanity_val_steps=params.num_sanity_val_steps
+        if not args.weight else 0,
         gpus=params.gpus,
         max_epochs=params.max_epochs,
         log_every_n_steps=50,
@@ -175,9 +176,12 @@ def main(params: Optional[SlotAttentionParams] = None):
         ] if params.is_logger_enabled else [checkpoint_callback],
         profiler='simple',
         precision=16 if args.fp16 else 32,
-        resume_from_checkpoint=args.weight if args.weight else None,
+        weights_save_path=ckp_path,
     )
-    trainer.fit(method, datamodule=clevr_datamodule)
+    trainer.fit(
+        method,
+        datamodule=clevr_datamodule,
+        ckpt_path=args.weight if args.weight else None)
 
 
 if __name__ == "__main__":

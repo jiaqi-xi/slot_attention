@@ -62,15 +62,16 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot)
 
-        self.color_tokens = [1746, 2866, 1470, 7048, 1901, 5496, 736, 4481]
-        self.shape_tokens = [10266, 11353, 22092,  6987] if \
-            viewpoint_dataset else [11353, 22092]
+        self.color_tokens = torch.tensor(
+            [1746, 2866, 1470, 7048, 1901, 5496, 736, 4481])
+        self.shape_tokens = torch.tensor([10266, 11353, 22092,  6987]) if \
+            viewpoint_dataset else torch.tensor([11353, 22092])
         self.num_colors = len(self.color_tokens)
         self.num_shapes = len(self.shape_tokens)
         self.color_mlp = build_mlps(self.dec_hidden_dims[-1], cls_mlps,
-                                    self.num_colors)
+                                    self.num_colors + 1)
         self.shape_mlp = build_mlps(self.dec_hidden_dims[-1], cls_mlps,
-                                    self.num_shapes)
+                                    self.num_shapes + 1)
         self.hard_visual_masking = hard_visual_masking
         assert recon_from in ['feats', 'slots', 'recons']
         self.recon_from = recon_from
@@ -161,23 +162,33 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
         pred_shapes = self.shape_mlp(grouped_feats)
 
         # construct labels
-        obj_tokens = tokens[obj_mask]
-        gt_colors = obj_tokens[:, 2]
+        obj_tokens = tokens[obj_mask].detach().clone()
+        gt_colors = obj_tokens[:, 2].detach().clone()
+        color_tokens = obj_tokens[:, 2].detach().clone()
         for i, color in enumerate(self.color_tokens):
-            color_mask = (gt_colors == color)
+            color_mask = (color_tokens == color)
             gt_colors[color_mask] = i
             # 'cyan' will be splited into two tokens
             # so the shape token is at [4]
             if color == 1470:
                 obj_tokens[color_mask, 3] = obj_tokens[color_mask, 4]
+        # for background texts
+        gt_colors[~torch.
+                  isin(color_tokens, self.color_tokens.type_as(color_tokens)
+                       )] = self.num_colors
 
-        gt_shapes = obj_tokens[:, 3]
+        gt_shapes = obj_tokens[:, 3].detach().clone()
+        shape_tokens = obj_tokens[:, 3].detach().clone()
         for i, shape in enumerate(self.shape_tokens):
-            gt_shapes[gt_shapes == shape] = i
+            gt_shapes[shape_tokens == shape] = i
+        gt_shapes[~torch.
+                  isin(shape_tokens, self.shape_tokens.type_as(shape_tokens)
+                       )] = self.num_shapes
+
         assert 0 <= gt_colors.min().item() <= gt_colors.max().item(
-        ) < self.num_colors
+        ) <= self.num_colors
         assert 0 <= gt_shapes.min().item() <= gt_shapes.max().item(
-        ) < self.num_shapes
+        ) <= self.num_shapes
 
         return pred_colors, pred_shapes, gt_colors, gt_shapes
 

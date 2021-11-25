@@ -20,16 +20,18 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
     One text ('color-shape' of an object) directly for one slot!
     """
 
-    def __init__(self,
-                 data_root: str,
-                 max_num_images: Optional[int],
-                 clip_transforms: Callable,
-                 max_n_objects: int = 6,
-                 split: str = "train",
-                 clip_len: int = 34,
-                 is_video: bool = False,
-                 shuffle_obj: bool = False,
-                 pad_text: str = ''):
+    def __init__(
+        self,
+        data_root: str,
+        max_num_images: Optional[int],
+        clip_transforms: Callable,
+        max_n_objects: int = 6,
+        split: str = "train",
+        clip_len: int = 34,
+        is_video: bool = False,
+        shuffle_obj: bool = False,
+        pad_text: str = '',
+    ):
         # TODO: we assume `self.max_n_objects` == 6 here!
         super().__init__(data_root, max_num_images, clip_transforms,
                          max_n_objects, split, clip_len, is_video, True, True)

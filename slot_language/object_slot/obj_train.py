@@ -44,6 +44,7 @@ def build_data_module(params: SlotAttentionParams):
         num_workers=params.num_workers,
         max_n_objects=params.num_slots - 1,
         shuffle_obj=params.shuffle_obj,
+        pad_text=params.pad_text,
     )
     return clevr_datamodule
 
@@ -58,7 +59,8 @@ def build_text2slot_model(params: SlotAttentionParams):
             params.text2slot_hidden_sizes,
             use_bn=False,
             normalize_slots=params.normalize_slots,
-            random_bg_slot=params.random_bg_slot)
+            random_bg_slot=params.random_bg_slot,
+            bg_same_slot=params.bg_same_slot)
     return text2slot_model
 
 
