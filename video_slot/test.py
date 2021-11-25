@@ -37,8 +37,8 @@ def main(params=None):
             model, clevr_datamodule.train_dataset, num=args.test_num)
         val_res = inference(
             model, clevr_datamodule.val_dataset, num=args.test_num)
-    save_video(train_res, os.path.join(save_folder, 'train.mp4'), fps=2)
-    save_video(val_res, os.path.join(save_folder, 'val.mp4'), fps=2)
+    save_video(train_res, os.path.join(save_folder, 'train.mp4'), fps=4)
+    save_video(val_res, os.path.join(save_folder, 'val.mp4'), fps=4)
 
 
 def inference(model, dataset, num=3):

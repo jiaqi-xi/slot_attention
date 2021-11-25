@@ -220,19 +220,20 @@ class SlotAttentionModel(nn.Module):
         # TODO: this is different from the other slot-att models
         return recon_combined, recons, masks, slot_recons
 
-    def upsample2x(self, in_channels, out_channels):
+    def upsample2x(self, in_channels, out_channels, stride=2):
         if self.use_deconv:
             return nn.ConvTranspose2d(
                 in_channels,
                 out_channels,
                 kernel_size=self.kernel_size,
-                stride=2,
+                stride=stride,
                 padding=self.kernel_size // 2,
-                output_padding=1,
+                output_padding=stride - 1,
             )
         else:
             return nn.Sequential(
-                nn.UpsamplingBilinear2d(scale_factor=2),
+                nn.UpsamplingBilinear2d(
+                    scale_factor=2) if stride == 2 else nn.Identity(),
                 nn.Conv2d(
                     in_channels,
                     out_channels,
@@ -259,11 +260,11 @@ class SlotAttentionModel(nn.Module):
                 ))
 
         self.encoder = nn.Sequential(*modules)
-        self.encoder_pos_embedding = SoftPositionEmbed(3, self.out_features,
+        self.encoder_pos_embedding = SoftPositionEmbed(3, self.enc_hiddens[-1],
                                                        self.resolution)
         self.encoder_out_layer = nn.Sequential(
             nn.LayerNorm(self.enc_hiddens[-1]),
-            nn.Linear(self.out_features, self.out_features),
+            nn.Linear(self.enc_hiddens[-1], self.out_features),
             nn.ReLU(),
             nn.Linear(self.out_features, self.out_features),
         )
@@ -271,18 +272,22 @@ class SlotAttentionModel(nn.Module):
     def _build_decoder(self):
         """Build decoder related modules."""
         modules = []
-
         in_size = self.decoder_resolution[0]
         out_size = in_size
-
+        stride = 2
         for i in range(len(self.dec_hiddens) - 1):
             modules.append(
                 nn.Sequential(
-                    self.upsample2x(self.dec_hiddens[i],
-                                    self.dec_hiddens[i + 1]),
+                    self.upsample2x(
+                        self.dec_hiddens[i],
+                        self.dec_hiddens[i + 1],
+                        stride=stride),
                     nn.ReLU(),
                 ))
-            out_size = conv_transpose_out_shape(out_size, 2, 2, 5, 1)
+            out_size = conv_transpose_out_shape(out_size, stride, 2, 5,
+                                                stride - 1)
+            if out_size == self.resolution[0]:
+                stride = 1
 
         assert_shape(
             self.resolution,
@@ -307,7 +312,7 @@ class SlotAttentionModel(nn.Module):
 
     def loss_function(self, input):
         recon_combined, recons, masks, slots = self.forward(input)
-        loss = F.mse_loss(recon_combined, input)
+        loss = F.mse_loss(recon_combined, input.flatten(0, 1))
         output_dict = {
             'recon_loss': loss,
             'masks': masks,

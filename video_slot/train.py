@@ -165,7 +165,4 @@ if __name__ == "__main__":
         args.params = args.params[:-3]
     params = importlib.import_module(args.params)
     params = params.SlotAttentionParams()
-    if params.perceptual_loss:
-        assert not params.pred_mask, \
-            'Perceptual loss cannot be applied to mask! Only to slot images.'
     main(params)

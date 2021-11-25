@@ -87,7 +87,7 @@ class VideoLogCallback(Callback):
                 video = pl_module.sample_video()
                 video = (video * 255.).numpy().astype(np.uint8)
                 trainer.logger.experiment.log(
-                    {"video": [wandb.Video(video, fps=6)]}, commit=False)
+                    {"video": [wandb.Video(video, fps=4)]}, commit=False)
 
 
 def to_rgb_from_tensor(x: Tensor):
