@@ -52,6 +52,10 @@ class CLEVRVideoFrameDataset(Dataset):
         else:
             self.base_num = 1  # in val, one clip per video
 
+    def _rand_another(self, index):
+        another_index = np.random.choice(len(self))
+        return self.__getitem__(another_index)
+
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""
         if self.is_video:
@@ -65,7 +69,9 @@ class CLEVRVideoFrameDataset(Dataset):
         imgs = []
         for _ in range(self.sample_clip_num):
             success, img = cap.read()
-            assert success, f'read video {image_path} frame {frame_idx} fail!'
+            if not success:
+                cap.release()
+                return self._rand_another(index)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             imgs.append(img)
         cap.release()
@@ -96,6 +102,8 @@ class CLEVRVideoFrameDataset(Dataset):
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 img_list.append(img)
         cap.release()
+        if not len(img_list):  # empty video
+            return self._rand_another(index)
         return torch.stack([self.clevr_transforms(img) for img in img_list],
                            dim=0)
 
@@ -147,6 +155,9 @@ class CLEVRVideoFrameDataModule(pl.LightningDataModule):
         self.num_val_images = num_val_images
         self.sample_clip_num = sample_clip_num
 
+        self._build_dataset()
+
+    def _build_dataset(self):
         self.train_dataset = CLEVRVideoFrameDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
@@ -218,8 +229,9 @@ class CATERVideoFrameDataset(CLEVRVideoFrameDataset):
             # TODO: here we don't care about object num
             # if num_objects <= self.max_n_objects:
             if True:
-                image_path = os.path.join(self.data_path,
-                                          f"{anno['image_filename']}")
+                img_name = anno['image_filename'].replace(
+                    'CLEVR_new', 'CATER_new')
+                image_path = os.path.join(self.data_path, f"{img_name}")
                 assert os.path.exists(
                     image_path), f"{image_path} does not exist"
                 paths.append(image_path)
@@ -228,9 +240,7 @@ class CATERVideoFrameDataset(CLEVRVideoFrameDataset):
 
 class CATERVideoFrameDataModule(CLEVRVideoFrameDataModule):
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
+    def _build_dataset(self):
         self.train_dataset = CATERVideoFrameDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,

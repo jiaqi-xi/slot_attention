@@ -5,6 +5,7 @@ from torch import nn
 from torch.nn import functional as F
 
 import lpips
+from unet import UNet
 from utils import Tensor, assert_shape, build_grid, conv_transpose_out_shape
 
 
@@ -141,6 +142,8 @@ class SlotAttentionModel(nn.Module):
         slot_size: int = 128,
         out_features: int = 64,
         enc_hiddens: Tuple[int, ...] = (3, 32, 32, 32, 32),
+        use_unet: bool = False,
+        relu_before_pe: bool = True,
         dec_hiddens: Tuple[int, ...] = (128, 64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
         use_deconv: bool = True,
@@ -156,6 +159,8 @@ class SlotAttentionModel(nn.Module):
         self.slot_size = slot_size
         self.out_features = out_features
         self.enc_hiddens = enc_hiddens
+        self.use_unet = use_unet
+        self.relu_before_pe = relu_before_pe
         self.dec_hiddens = dec_hiddens
         self.use_deconv = use_deconv
         self.decoder_resolution = decoder_resolution
@@ -245,21 +250,27 @@ class SlotAttentionModel(nn.Module):
 
     def _build_encoder(self):
         """Build encoder related modules."""
-        modules = []
-        for i in range(len(self.enc_hiddens) - 1):
-            modules.append(
-                nn.Sequential(
-                    nn.Conv2d(
-                        self.enc_hiddens[i],
-                        out_channels=self.enc_hiddens[i + 1],
-                        kernel_size=self.kernel_size,
-                        stride=1,
-                        padding=self.kernel_size // 2,
-                    ),
-                    nn.ReLU(),
-                ))
+        if self.use_unet:
+            self.encoder = UNet(self.enc_hiddens[0], self.enc_hiddens[1:],
+                                self.kernel_size, False, True, True, False)
+        else:
+            modules = []
+            for i in range(len(self.enc_hiddens) - 1):
+                act_func = nn.Identity() if (not self.relu_before_pe) and \
+                    (i == len(self.enc_hiddens) - 2) else nn.ReLU()
+                modules.append(
+                    nn.Sequential(
+                        nn.Conv2d(
+                            self.enc_hiddens[i],
+                            out_channels=self.enc_hiddens[i + 1],
+                            kernel_size=self.kernel_size,
+                            stride=1,
+                            padding=self.kernel_size // 2,
+                        ),
+                        act_func,
+                    ))
+            self.encoder = nn.Sequential(*modules)
 
-        self.encoder = nn.Sequential(*modules)
         self.encoder_pos_embedding = SoftPositionEmbed(3, self.enc_hiddens[-1],
                                                        self.resolution)
         self.encoder_out_layer = nn.Sequential(

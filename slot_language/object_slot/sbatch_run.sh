@@ -61,6 +61,8 @@ PL_FAULT_TOLERANT_TRAINING=1 python $PY_FILE $PY_ARGS >> $LOG_FILE              
 
 " >> ./run-${JOB_NAME}.slrm
 
+# we don't want the temporal ckp file...
+rm -f .pl_auto_save.ckpt
 
 # run the created file
 sbatch run-${JOB_NAME}.slrm

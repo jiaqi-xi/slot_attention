@@ -13,6 +13,8 @@ class SlotAttentionParams:
     enc_hiddens: Tuple[int, ...] = (3, 32, 32, 32, 32)
     dec_hiddens: Tuple[int, ...] = (128, 64, 64, 64, 64)
     decoder_resolution: Tuple[int, int] = (8, 8)
+    use_unet: bool = False
+    relu_before_pe: bool = True  # SlotAttn is True while SAVi is False
     use_deconv: bool = True
 
     # slot attention module
@@ -40,7 +42,7 @@ class SlotAttentionParams:
     batch_size: int = 16 * 4
     val_batch_size: int = 16 * 4
     num_workers: int = 6
-    max_epochs: int = 6
+    max_epochs: int = 16
     num_sanity_val_steps: int = 1
     num_train_images: Optional[int] = None
     num_val_images: Optional[int] = None

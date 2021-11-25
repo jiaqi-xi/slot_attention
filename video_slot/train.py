@@ -1,4 +1,5 @@
 import os
+import torch
 import importlib
 import argparse
 import numpy as np
@@ -52,6 +53,9 @@ def build_model(params: SlotAttentionParams):
         slot_size=params.slot_size,
         out_features=params.out_features,
         enc_hiddens=params.enc_hiddens,
+        use_unet=False if not hasattr(params, 'use_unet') else params.use_unet,
+        relu_before_pe=True
+        if not hasattr(params, 'relu_before_pe') else params.relu_before_pe,
         dec_hiddens=params.dec_hiddens,
         decoder_resolution=params.decoder_resolution,
         use_deconv=params.use_deconv,
@@ -61,6 +65,34 @@ def build_model(params: SlotAttentionParams):
         use_entropy_loss=params.use_entropy_loss,
     )
     return model
+
+
+def process_ckp(ckp_path):
+    """Hack that enables checkpointing from mid-epoch."""
+    if not ckp_path:
+        return ''
+    if ckp_path == '.pl_auto_save.ckpt':
+        return ''
+    ckp = torch.load(ckp_path, map_location='cpu')
+    for key in ckp['loops']['fit_loop'][
+            'epoch_loop.val_loop.dataloader_progress']['current'].keys():
+        ckp['loops']['fit_loop']['epoch_loop.val_loop.dataloader_progress'][
+            'total'][key] += ckp['loops']['fit_loop'][
+                'epoch_loop.val_loop.dataloader_progress']['current'][key]
+        ckp['loops']['fit_loop']['epoch_loop.val_loop.dataloader_progress'][
+            'current'][key] = 0
+    for key in ckp['loops']['fit_loop'][
+            'epoch_loop.val_loop.epoch_loop.batch_progress']['current'].keys():
+        ckp['loops']['fit_loop'][
+            'epoch_loop.val_loop.epoch_loop.batch_progress']['total'][
+                key] += ckp['loops']['fit_loop'][
+                    'epoch_loop.val_loop.epoch_loop.batch_progress'][
+                        'current'][key]
+        ckp['loops']['fit_loop'][
+            'epoch_loop.val_loop.epoch_loop.batch_progress']['current'][
+                key] = 0
+    torch.save(ckp, ckp_path)
+    return ckp_path
 
 
 def main(params: Optional[SlotAttentionParams] = None):
@@ -123,6 +155,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         last_ckp = ckp_files[np.argmax(epoch_num)]
         print(f'INFO: automatically detect checkpoint {last_ckp}')
         args.weight = os.path.join(ckp_path, last_ckp)
+    args.weight = process_ckp(args.weight)
 
     trainer = Trainer(
         logger=logger if params.is_logger_enabled else False,

@@ -29,6 +29,8 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         slot_size: int = 128,
         out_features: int = 64,
         enc_hiddens: Tuple[int, ...] = (3, 32, 32, 32, 32),
+        use_unet: bool = False,
+        relu_before_pe: bool = True,
         dec_hiddens: Tuple[int, ...] = (128, 64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
         use_deconv: bool = True,
@@ -38,9 +40,10 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         use_entropy_loss: bool = False,
     ):
         super().__init__(resolution, num_slots, num_iterations, kernel_size,
-                         slot_size, out_features, enc_hiddens, dec_hiddens,
-                         decoder_resolution, use_deconv, slot_mlp_size,
-                         learnable_slot, use_entropy_loss)
+                         slot_size, out_features, enc_hiddens, use_unet,
+                         relu_before_pe, dec_hiddens, decoder_resolution,
+                         use_deconv, slot_mlp_size, learnable_slot,
+                         use_entropy_loss)
 
         self.num_clips = num_clips
         self.stop_recur_slot_grad = stop_recur_slot_grad
