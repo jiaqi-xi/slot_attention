@@ -1,63 +1,70 @@
 import os
-import sys
 import importlib
 import argparse
 import numpy as np
 from typing import Optional
 
-import torch.nn as nn
 import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
-from obj_model import ObjRecurSlotAttentionModel
-from obj_train import build_text2slot_model
-from obj_data import ObjRecurCLEVRVisionLanguageCLIPDataModule
-from obj_method import ObjRecurSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from recur_params import SlotAttentionParams
-
-sys.path.append('../')
-
-from train import build_data_transforms, process_ckp
-from utils import VideoLogCallback, ImageLogCallback
-
-sys.path.append('../viewpoint_dataset/')
-
-from viewpoint_data import ObjRecurCLEVRVisionLanguageViewpointDataModule
-
-
-def build_slot_lstm_model(params: SlotAttentionParams):
-    if not params.use_lstm:
-        return None
-    lstm_model = nn.LSTM(params.slot_size, params.lstm_hidden_size,
-                         params.lstm_num_layers)
-    return lstm_model
+from obj_train import build_data_module, process_ckp, build_text2slot_model, \
+    VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
+from unet_method import UNetSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from unet_model import UNetSlotAttentionModel, SemPosSepUNetSlotAttentionModel
+from unet_params import SlotAttentionParams
 
 
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
-    lstm_model = build_slot_lstm_model(params)
-    model = ObjRecurSlotAttentionModel(
-        clip_model=clip_model,
-        use_clip_vision=params.use_clip_vision,
-        use_clip_text=params.use_text2slot,
-        text2slot_model=text2slot_model,
-        resolution=params.resolution,
-        num_slots=params.num_slots,
-        num_iterations=params.num_iterations,
-        enc_resolution=params.enc_resolution,
-        enc_channels=params.clip_vision_channel,
-        enc_pos_enc=params.enc_pos_enc,
-        slot_size=params.slot_size,
-        dec_kernel_size=params.dec_kernel_size,
-        dec_hidden_dims=params.dec_channels,
-        dec_resolution=params.dec_resolution,
-        slot_mlp_size=params.slot_mlp_size,
-        use_entropy_loss=params.use_entropy_loss,
-        slot_emb_lstm=lstm_model,
-    )
+    if params.use_sempos_sep:
+        print('Using SemPosSepUNetSlotAttentionModel!')
+        model = SemPosSepUNetSlotAttentionModel(
+            clip_model=clip_model,
+            use_clip_vision=params.use_clip_vision,
+            use_clip_text=params.use_text2slot,
+            text2slot_model=text2slot_model,
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            slot_size=params.slot_size,
+            enc_pos_size=params.enc_pos_size,
+            dec_pos_size=params.dec_pos_size,
+            slot_mlp_size=params.slot_mlp_size,
+            kernel_size=params.kernel_size,
+            enc_channels=params.enc_channels,
+            dec_channels=params.dec_channels,
+            enc_pos_enc=params.enc_pos_enc,
+            dec_resolution=params.dec_resolution,
+            use_maxpool=False
+            if not hasattr(params, 'use_maxpool') else params.use_maxpool,
+            use_entropy_loss=params.use_entropy_loss,
+            use_bg_sep_slot=params.use_bg_sep_slot,
+        )
+    else:
+        print('Using UNetSlotAttentionModel!')
+        model = UNetSlotAttentionModel(
+            clip_model=clip_model,
+            use_clip_vision=params.use_clip_vision,
+            use_clip_text=params.use_text2slot,
+            text2slot_model=text2slot_model,
+            resolution=params.resolution,
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            slot_size=params.slot_size,
+            slot_mlp_size=params.slot_mlp_size,
+            kernel_size=params.kernel_size,
+            enc_channels=params.enc_channels,
+            dec_channels=params.dec_channels,
+            enc_pos_enc=params.enc_pos_enc,
+            dec_resolution=params.dec_resolution,
+            use_maxpool=False
+            if not hasattr(params, 'use_maxpool') else params.use_maxpool,
+            use_entropy_loss=params.use_entropy_loss,
+            use_bg_sep_slot=params.use_bg_sep_slot,
+        )
     return model
 
 
@@ -68,35 +75,24 @@ def main(params: Optional[SlotAttentionParams] = None):
     assert params.num_slots > 1, "Must have at least 2 slots."
 
     if params.is_verbose:
-        print(f'INFO: model has {params.num_slots} slots')
-        print(f'INFO: using {params.sample_clip_num} clips')
+        print(f"INFO: model has {params.num_slots} slots")
+        if params.num_train_images:
+            print("INFO: restricting the train dataset size to "
+                  f"`num_train_images`: {params.num_train_images}")
+        if params.num_val_images:
+            print("INFO: restricting the validation dataset size to "
+                  f"`num_val_images`: {params.num_val_images}")
         if args.fp16:
             print('INFO: using FP16 training!')
         if args.weight:
             print(f'INFO: loading checkpoint {args.weight}')
 
-    clip_transforms = build_data_transforms(params)
-
     model = build_slot_attention_model(params)
 
-    data_module = ObjRecurCLEVRVisionLanguageViewpointDataModule if \
-        'viewpoint' in params.data_root else ObjRecurCLEVRVisionLanguageCLIPDataModule
-    clevr_datamodule = data_module(
-        data_root=params.data_root,
-        train_batch_size=params.batch_size,
-        val_batch_size=params.val_batch_size,
-        clip_transforms=clip_transforms,
-        num_workers=params.num_workers,
-        max_n_objects=params.num_slots - 1,
-        shuffle_obj=params.shuffle_obj,
-        sample_clip_num=params.sample_clip_num,
-    )
+    clevr_datamodule = build_data_module(params)
 
     method = SlotAttentionMethod(
-        model=model,
-        datamodule=clevr_datamodule,
-        params=params,
-        entropy_loss_w=params.entropy_loss_w)
+        model=model, datamodule=clevr_datamodule, params=params)
 
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params
@@ -132,6 +128,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     process_ckp(args.weight)  # enable mid-epoch resuming
     trainer = Trainer(
         logger=logger if params.is_logger_enabled else False,
+        gradient_clip_val=params.grad_clip_norm,
         # TODO: 'ddp' doesn't work on Vector cluster!
         accelerator="dp" if params.gpus > 1 else None,
         num_sanity_val_steps=params.num_sanity_val_steps

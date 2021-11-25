@@ -25,6 +25,7 @@ class SlotAttention(nn.Module):
         self.slot_size = slot_size  # number of hidden layers in slot dimensions
         self.mlp_hidden_size = mlp_hidden_size
         self.epsilon = epsilon
+        self.attn_scale = self.slot_size**-0.5
 
         self.norm_inputs = nn.LayerNorm(self.in_features)
         # I guess this is layer norm across each slot? should look into this
@@ -90,7 +91,7 @@ class SlotAttention(nn.Module):
             slots = slots_mu + slots_log_sigma.exp() * slots_init
         return slots
 
-    def forward(self, inputs: Tensor, slots_mu: Tensor, slots_log_sigma=None):
+    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
         """Forward function.
 
         Args:
@@ -121,8 +122,7 @@ class SlotAttention(nn.Module):
             q = self.project_q(
                 slots)  # Shape: [batch_size, num_slots, slot_size].
 
-            attn_norm_factor = self.slot_size**-0.5
-            attn_logits = attn_norm_factor * torch.matmul(k, q.transpose(2, 1))
+            attn_logits = self.attn_scale * torch.matmul(k, q.transpose(2, 1))
             attn = F.softmax(attn_logits, dim=-1)
             # `attn` has shape: [batch_size, num_inputs, num_slots].
 
@@ -222,7 +222,7 @@ class BgSepSlotAttention(nn.Module):
         if slots_mu is not None and slots_log_sigma is None:
             # Text2Slot predicts slot embeddings for each slot individually
             assert len(slots_mu.shape) == 3, 'wrong slot embedding shape!'
-            slots = slots_mu
+            slots, bg_slots = slots_mu[:, :-1], slots_mu[:, -1:]
         else:
             # TODO: currently not supporting Text2Slot predict distribution
             assert slots_mu is None and slots_log_sigma is None
@@ -247,7 +247,7 @@ class BgSepSlotAttention(nn.Module):
             bg_slots = bg_mu + bg_log_sigma.exp() * bg_slots_init.type_as(mu)
         return slots, bg_slots
 
-    def forward(self, inputs: Tensor, slots_mu: Tensor, slots_log_sigma=None):
+    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
         """Forward function.
 
         Args:
@@ -296,15 +296,15 @@ class BgSepSlotAttention(nn.Module):
             # GRU is expecting inputs of size (N,H)
             # so flatten batch and slots dimension
             fg_slots = self.gru(
-                fg_updates.view(bs * (self.num_slots - 1), self.slot_size),
-                fg_slots_prev.view(bs * (self.num_slots - 1), self.slot_size),
+                fg_updates.reshape(bs * (self.num_slots - 1), self.slot_size),
+                fg_slots_prev.reshape(bs * (self.num_slots - 1), self.slot_size),
             )
             fg_slots = fg_slots.view(bs, self.num_slots - 1, self.slot_size)
             fg_slots = fg_slots + self.mlp(fg_slots)
 
             bg_slots = self.gru(
-                bg_updates.view(bs * 1, self.slot_size),
-                bg_slots_prev.view(bs * 1, self.slot_size),
+                bg_updates.reshape(bs * 1, self.slot_size),
+                bg_slots_prev.reshape(bs * 1, self.slot_size),
             )
             bg_slots = bg_slots.view(bs, 1, self.slot_size)
             bg_slots = bg_slots + self.bg_mlp(bg_slots)
@@ -458,6 +458,7 @@ class SlotAttentionModel(nn.Module):
         self.decoder_pos_embedding = SoftPositionEmbed(3, self.out_features,
                                                        self.dec_resolution)
 
+        self.use_bg_sep_slot = use_bg_sep_slot
         slot_attn = BgSepSlotAttention if use_bg_sep_slot else SlotAttention
         self.slot_attention = slot_attn(
             in_features=self.out_features,

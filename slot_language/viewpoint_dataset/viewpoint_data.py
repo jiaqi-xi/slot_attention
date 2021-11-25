@@ -293,7 +293,8 @@ class ObjCLEVRVisionLanguageViewpointDataset(
             'a {} {}'.format(color, shape)
             for color, shape in zip(colors, shapes)
         ]
-        if self.shuffle_obj:
+        # shuffle the order of objects
+        if self.split == 'train' and self.shuffle_obj:
             np.random.shuffle(texts)
         return texts
 

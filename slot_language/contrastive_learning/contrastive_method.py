@@ -32,23 +32,6 @@ class MoCoSlotAttentionVideoLanguageMethod(SlotAttentionVideoLanguageMethod):
         self.log_dict(logs, sync_dist=True)
         return {'loss': loss}
 
-    def validation_step(self, batch, batch_idx, optimizer_idx=0):
-        val_loss = self.model.loss_function(batch)
-        return val_loss
-
-    def validation_epoch_end(self, outputs):
-        avg_recon_loss = torch.stack([x['recon_loss'] for x in outputs]).mean()
-        logs = {
-            'val_loss': avg_recon_loss,
-            'val_recon_loss': avg_recon_loss,
-        }
-        if self.model.model_q.use_entropy_loss:
-            avg_entropy = torch.stack([x['entropy'] for x in outputs]).mean()
-            logs['val_entropy'] = avg_entropy
-            logs['val_loss'] += avg_entropy * self.entropy_loss_w
-        self.log_dict(logs, sync_dist=True)
-        print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))
-
     def sample_images(self):
         dl = self.datamodule.val_dataloader()
         perm = torch.randperm(self.params.val_batch_size)

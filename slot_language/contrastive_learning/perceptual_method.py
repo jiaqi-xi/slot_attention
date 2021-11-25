@@ -13,7 +13,8 @@ from utils import to_rgb_from_tensor
 from method import SlotAttentionVideoLanguageMethod
 
 
-class PerceptualSlotAttentionVideoLanguageMethod(SlotAttentionVideoLanguageMethod):
+class PerceptualSlotAttentionVideoLanguageMethod(
+        SlotAttentionVideoLanguageMethod):
 
     def __init__(self, model: PerceptualSlotAttentionModel,
                  datamodule: pl.LightningDataModule,
@@ -32,23 +33,6 @@ class PerceptualSlotAttentionVideoLanguageMethod(SlotAttentionVideoLanguageMetho
         logs = {key: val.item() for key, val in train_loss.items()}
         self.log_dict(logs, sync_dist=True)
         return {'loss': loss}
-
-    def validation_step(self, batch, batch_idx, optimizer_idx=0):
-        val_loss = self.model.loss_function(batch)
-        return val_loss
-
-    def validation_epoch_end(self, outputs):
-        avg_recon_loss = torch.stack([x['recon_loss'] for x in outputs]).mean()
-        logs = {
-            'val_loss': avg_recon_loss,
-            'val_recon_loss': avg_recon_loss,
-        }
-        if self.model.model.use_entropy_loss:
-            avg_entropy = torch.stack([x['entropy'] for x in outputs]).mean()
-            logs['val_entropy'] = avg_entropy
-            logs['val_loss'] += avg_entropy * self.entropy_loss_w
-        self.log_dict(logs, sync_dist=True)
-        print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))
 
     def sample_images(self):
         dl = self.datamodule.val_dataloader()

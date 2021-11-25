@@ -36,22 +36,15 @@ class PerceptualSlotAttentionModel(nn.Module):
     """SlotAttentionModel that uses Perceptual learning loss.
 
     Args:
-        model: base encoder, k is EMA of q
-        T: softmax temperature
-        mlp: additional projection head from slot emb to contrastive features
+        model: base encoder
+        arch: model used in Perceptual Loss
     """
 
-    def __init__(self,
-                 model: SlotAttentionModel,
-                 dim: int = 64,
-                 arch: str = 'vgg'):
+    def __init__(self, model: SlotAttentionModel, arch: str = 'vgg'):
         super().__init__()
 
-        self.dim = dim
-        self.arch = arch
         self.model = model
         self.perceptual_loss = PerceptualLoss(arch)
-        self.num_slots = self.model.num_slots
 
     def forward_test(self, data):
         return self.model(dict(img=data['img'], text=data['text']))
@@ -89,11 +82,14 @@ class PerceptualSlotAttentionModel(nn.Module):
             recon_combined, recons, masks, _, _, _ = self.forward(input)
             img = torch.cat([input['img'], input['img2']], dim=0)
             recon_loss = F.mse_loss(recon_combined, img)
-            recon_1, recon_2 = torch.split(recons, 2, axis=0)
-            mask_1, mask_2 = torch.split(masks, 2, axis=0)
+            recon_1, recon_2 = recons[:recons.shape[0] // 2], recons[
+                recons.shape[0] // 2:]  # torch.split(recons, 2, dim=0)
+            mask_1, mask_2 = masks[:masks.shape[0] // 2], masks[
+                masks.shape[0] // 2:]  # torch.split(masks, 2, dim=0)
             x_1 = mask_1 * recon_1 + (1 - mask_1)
             x_2 = mask_2 * recon_2 + (1 - mask_2)
-            perceptual_loss = self.perceptual_loss.loss_function(x_1.flatten(0,1), x_2.flatten(0,1))
+            perceptual_loss = self.perceptual_loss.loss_function(
+                x_1.flatten(0, 1), x_2.flatten(0, 1))
             loss_dict = {
                 'recon_loss': recon_loss,
                 'perceptual_loss': perceptual_loss,

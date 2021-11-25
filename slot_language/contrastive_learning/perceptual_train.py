@@ -9,23 +9,20 @@ import pytorch_lightning.loggers as pl_loggers
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from pair_data import PairCLEVRVisionLanguageCLIPDataModule
+from metric_train import build_data_module
 from perceptual_model import PerceptualSlotAttentionModel
 from perceptual_method import PerceptualSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from perceptual_params import SlotAttentionParams
 
 sys.path.append('../')
 
-from train import build_data_transforms, build_slot_attention_model, process_ckp
+from train import build_slot_attention_model, process_ckp
 from utils import VideoLogCallback, ImageLogCallback
 
 
 def build_perceptual_slot_attention_model(params: SlotAttentionParams):
     model = build_slot_attention_model(params)
-    model = PerceptualSlotAttentionModel(
-        model,
-        params.slot_size,
-        arch=params.perceptual_arch)
+    model = PerceptualSlotAttentionModel(model, arch=params.perceptual_arch)
     return model
 
 
@@ -48,24 +45,9 @@ def main(params: Optional[SlotAttentionParams] = None):
         if args.weight:
             print(f'INFO: loading checkpoint {args.weight}')
 
-    clip_transforms = build_data_transforms(params)
-
     model = build_perceptual_slot_attention_model(params)
 
-    clevr_datamodule = PairCLEVRVisionLanguageCLIPDataModule(
-        data_root=params.data_root,
-        train_batch_size=params.batch_size,
-        val_batch_size=params.val_batch_size,
-        clip_transforms=clip_transforms,
-        max_n_objects=params.num_slots - 1,
-        num_workers=params.num_workers,
-        num_train_images=params.num_train_images,
-        num_val_images=params.num_val_images,
-        fine_grained=params.fine_grained,
-        object_only=params.object_only,
-        overfit=params.overfit,
-        separater=params.separater,
-    )
+    clevr_datamodule = build_data_module(params)
 
     print('Not using max_object_num constraint here!')
 

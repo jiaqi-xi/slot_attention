@@ -10,7 +10,7 @@ from unet import UNet, UpBlock
 
 sys.path.append('../')
 
-from model import SlotAttention, SoftPositionEmbed, SlotAttentionModel
+from model import SlotAttention, BgSepSlotAttention, SoftPositionEmbed, SlotAttentionModel
 from utils import assert_shape, conv_transpose_out_shape
 
 
@@ -43,9 +43,15 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         use_word_set: bool = False,
         use_padding_mask: bool = False,
         use_entropy_loss: bool = False,
+        use_bg_sep_slot: bool = False,
     ):
         nn.Module.__init__(self)
         self.resolution = resolution
+        self.num_slots = num_slots
+        self.num_iterations = num_iterations
+        self.slot_size = slot_size
+        self.slot_mlp_size = slot_mlp_size
+        self.enc_channels = enc_channels
         self.enc_pos_enc = enc_pos_enc
         self.enc_resolution = resolution
         self.dec_resolution = dec_resolution
@@ -90,6 +96,8 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         if self.enc_pos_enc:
             self.encoder_pos_embedding = SoftPositionEmbed(
                 3, self.out_features, self.enc_resolution)
+        else:
+            self.encoder_pos_embedding = None
         self.encoder_out_layer = nn.Sequential(
             nn.Linear(self.out_features, self.out_features),
             nn.ReLU(),
@@ -123,7 +131,9 @@ class UNetSlotAttentionModel(SlotAttentionModel):
         self.decoder_pos_embedding = SoftPositionEmbed(3, self.out_features,
                                                        self.dec_resolution)
 
-        self.slot_attention = SlotAttention(
+        self.use_bg_sep_slot = use_bg_sep_slot
+        slot_attn = BgSepSlotAttention if use_bg_sep_slot else SlotAttention
+        self.slot_attention = slot_attn(
             in_features=self.out_features,
             num_iterations=num_iterations,
             num_slots=num_slots,

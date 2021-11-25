@@ -58,10 +58,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     print('Not using max_object_num constraint here!')
 
     method = SlotAttentionMethod(
-        model=model,
-        datamodule=clevr_datamodule,
-        params=params,
-        entropy_loss_w=params.entropy_loss_w)
+        model=model, datamodule=clevr_datamodule, params=params)
 
     # we want to also resume wandb log if restoring from previous training
     logger_name = f'{args.params}-fp16' if args.fp16 else args.params

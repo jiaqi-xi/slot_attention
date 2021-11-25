@@ -2,60 +2,36 @@ import os
 import sys
 import importlib
 import argparse
-import numpy as np
 from typing import Optional
+import numpy as np
 
 import torch
 from torchvision import utils as vutils
 
-from pair_data import PairCLEVRVisionLanguageCLIPDataModule
-from perceptual_model import PerceptualSlotAttentionModel
-from perceptual_method import PerceptualSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from perceptual_params import SlotAttentionParams
+from obj_train import build_slot_attention_model, build_data_module
+from obj_method import ObjSlotAttentionVideoLanguageMethod as SlotAttentionMethod
+from obj_params import SlotAttentionParams
 
 sys.path.append('../')
 
-from train import build_data_transforms, build_slot_attention_model
-from utils import to_rgb_from_tensor, save_video
+from utils import save_video
 
 
-def build_perceptual_slot_attention_model(params: SlotAttentionParams):
-    model = build_slot_attention_model(params)
-    model = PerceptualSlotAttentionModel(
-        model,
-        params.slot_size,
-        arch=params.perceptual_arch)
-    return model
+def to_rgb_from_tensor(x):
+    """Reverse the Normalize operation in torchvision."""
+    return (x * 0.5 + 0.5).clamp(0, 1)
 
 
 def main(params: Optional[SlotAttentionParams] = None):
     if params is None:
         params = SlotAttentionParams()
 
-    clip_transforms = build_data_transforms(params)
+    model = build_slot_attention_model(params)
 
-    model = build_perceptual_slot_attention_model(params)
-
-    clevr_datamodule = PairCLEVRVisionLanguageCLIPDataModule(
-        data_root=params.data_root,
-        train_batch_size=params.batch_size,
-        val_batch_size=params.val_batch_size,
-        clip_transforms=clip_transforms,
-        max_n_objects=params.num_slots - 1,
-        num_workers=params.num_workers,
-        num_train_images=params.num_train_images,
-        num_val_images=params.num_val_images,
-        fine_grained=params.fine_grained,
-        object_only=params.object_only,
-        overfit=params.overfit,
-        separater=params.separater,
-    )
-
-    print('Not using max_object_num constraint here!')
+    clevr_datamodule = build_data_module(params)
 
     model = SlotAttentionMethod(
         model=model, datamodule=clevr_datamodule, params=params)
-
     model.load_state_dict(torch.load(args.weight)['state_dict'], strict=True)
     model = model.cuda().eval()
 
@@ -64,11 +40,8 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     # get image from train and val dataset
     with torch.no_grad():
-        train_res = inference(
-            model, clevr_datamodule.train_dataset, num=args.test_num)
         val_res = inference(
             model, clevr_datamodule.val_dataset, num=args.test_num)
-    save_video(train_res, os.path.join(save_folder, 'train.mp4'), fps=2)
     save_video(val_res, os.path.join(save_folder, 'val.mp4'), fps=2)
 
 
@@ -80,10 +53,11 @@ def inference(model, dataset, num=3):
     all_texts = []
     for idx in data_idx:
         batch = dataset.__getitem__(idx)  # dict with key video, text, raw_text
-        video, text, raw_text = \
-            batch['video'], batch['text'], batch['raw_text']
+        video, text, padding, raw_text = batch['video'], \
+            batch['text'], batch['padding'], batch['raw_text']
         all_texts.append(raw_text)
-        batch = dict(img=video.float().cuda(), text=text.cuda())
+        batch = dict(
+            img=video.float().cuda(), text=text.cuda(), padding=padding.cuda())
         recon_combined, recons, masks, slots = model(batch)
         out = to_rgb_from_tensor(
             torch.cat(
@@ -108,6 +82,7 @@ def inference(model, dataset, num=3):
     # concat results vertically
     results = np.concatenate(results, axis=2)  # [T, 3, B*H, (num_slots+2)*W]
     results = np.ascontiguousarray(results.transpose((0, 2, 3, 1)))
+    print(f'Text: {all_texts}')
     return results
 
 
@@ -127,4 +102,5 @@ if __name__ == "__main__":
     params = importlib.import_module(args.params)
     params = params.SlotAttentionParams()
     params.num_iterations = args.num_iter
+    params.gpus = 1
     main(params)

@@ -4,67 +4,21 @@ import argparse
 import numpy as np
 
 import torch
-from torchvision import transforms
 from torchvision import utils as vutils
 
-from data import CLEVRVideoFrameDataModule
+from train import build_model, build_datamodule
 from method import SlotAttentionVideoMethod as SlotAttentionMethod
-from model import SlotAttentionModel
 from video_model import RecurrentSlotAttentionModel
 from params import SlotAttentionParams
-from utils import rescale, to_rgb_from_tensor, save_video
+from utils import to_rgb_from_tensor, save_video
 
 
 def main(params=None):
     if params is None:
         params = SlotAttentionParams()
 
-    if params.recurrent_slot_attention:
-        model = RecurrentSlotAttentionModel(
-            resolution=params.resolution,
-            num_slots=params.num_slots,
-            num_iterations=params.num_iterations,
-            num_clips=params.sample_clip_num,
-            kernel_size=params.kernel_size,
-            slot_size=params.slot_size,
-            hidden_dims=params.hidden_dims,
-            decoder_resolution=params.decoder_resolution,
-            use_deconv=params.use_deconv,
-            empty_cache=params.empty_cache,
-            slot_mlp_size=params.slot_mlp_size,
-            learnable_slot=params.learnable_slot,
-        )
-    else:
-        model = SlotAttentionModel(
-            resolution=params.resolution,
-            num_slots=params.num_slots,
-            num_iterations=params.num_iterations,
-            kernel_size=params.kernel_size,
-            slot_size=params.slot_size,
-            hidden_dims=params.hidden_dims,
-            decoder_resolution=params.decoder_resolution,
-            use_deconv=params.use_deconv,
-            empty_cache=params.empty_cache,
-            slot_mlp_size=params.slot_mlp_size,
-            learnable_slot=params.learnable_slot,
-        )
-
-    clevr_transforms = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Lambda(rescale),  # rescale between -1 and 1
-        transforms.Resize(params.resolution),
-    ])
-
-    clevr_datamodule = CLEVRVideoFrameDataModule(
-        data_root=params.data_root,
-        max_n_objects=params.num_slots - 1,
-        train_batch_size=params.batch_size,
-        val_batch_size=params.val_batch_size,
-        clevr_transforms=clevr_transforms,
-        num_train_images=params.num_train_images,
-        num_val_images=params.num_val_images,
-        num_workers=params.num_workers,
-    )
+    model = build_model(params)
+    clevr_datamodule = build_datamodule(params)
 
     model = SlotAttentionMethod(
         model=model,
@@ -83,8 +37,8 @@ def main(params=None):
             model, clevr_datamodule.train_dataset, num=args.test_num)
         val_res = inference(
             model, clevr_datamodule.val_dataset, num=args.test_num)
-    save_video(train_res, os.path.join(save_folder, 'train.mp4'), fps=2)
-    save_video(val_res, os.path.join(save_folder, 'val.mp4'), fps=2)
+    save_video(train_res, os.path.join(save_folder, 'train.mp4'), fps=4)
+    save_video(val_res, os.path.join(save_folder, 'val.mp4'), fps=4)
 
 
 def inference(model, dataset, num=3):
@@ -94,10 +48,7 @@ def inference(model, dataset, num=3):
     results = []
     for idx in data_idx:
         video = dataset.__getitem__(idx).float().cuda()
-        if isinstance(model.model, RecurrentSlotAttentionModel):
-            output = model(video, num_clips=video.shape[0])
-        else:
-            output = model(video)
+        output = model(video.unsqueeze(0))
         recon_combined, recons, masks, slots = output
         out = to_rgb_from_tensor(
             torch.cat(
