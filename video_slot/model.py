@@ -203,9 +203,9 @@ class SlotAttentionModel(nn.Module):
         batch_size, num_slots, slot_size = slots.shape
 
         # spatial broadcast
-        slots = slots.view(batch_size * num_slots, slot_size, 1, 1)
-        decoder_in = slots.repeat(1, 1, self.decoder_resolution[0],
-                                  self.decoder_resolution[1])
+        decoder_in = slots.view(batch_size * num_slots, slot_size, 1, 1)
+        decoder_in = decoder_in.repeat(1, 1, self.decoder_resolution[0],
+                                       self.decoder_resolution[1])
 
         out = self.decoder_pos_embedding(decoder_in)
         out = self.decoder(out)
@@ -215,15 +215,16 @@ class SlotAttentionModel(nn.Module):
         recons = out[:, :, :num_channels, :, :]  # [B, num_slots, C, H, W]
         masks = out[:, :, -1:, :, :]  # [B, num_slots, 1, H, W]
         masks = F.softmax(masks, dim=1)
-        slot_recons = recons * masks + (1 - masks)
+        # slot_recons = recons * masks + (1 - masks)
         recon_combined = torch.sum(recons * masks, dim=1)
         # recon_combined: [B, C, H, W]
         # recons: [B, num_slots, C, H, W]
         # masks: [B, num_slots, 1, H, W]
+        # slots: [B, num_slots, slot_size]
         # slot_recons: [B, num_slots, C, H, W]
         # TODO: I return slot_recons instead of slots here!
         # TODO: this is different from the other slot-att models
-        return recon_combined, recons, masks, slot_recons
+        return recon_combined, recons, masks, slots  # slot_recons
 
     def upsample2x(self, in_channels, out_channels, stride=2):
         if self.use_deconv:

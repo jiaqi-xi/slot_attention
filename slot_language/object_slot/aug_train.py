@@ -103,6 +103,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     process_ckp(args.weight)  # enable mid-epoch resuming
     trainer = Trainer(
         logger=logger if params.is_logger_enabled else False,
+        gradient_clip_val=params.grad_clip_norm,
         # TODO: 'ddp' doesn't work on Vector cluster!
         accelerator="dp" if params.gpus > 1 else None,
         num_sanity_val_steps=params.num_sanity_val_steps

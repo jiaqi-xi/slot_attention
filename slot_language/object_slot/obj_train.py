@@ -57,10 +57,8 @@ def build_text2slot_model(params: SlotAttentionParams):
             params.slot_size,
             params.text2slot_hidden_sizes,
             use_bn=False,
-            normalize_slots=False if not hasattr(params, 'normalize_slots')
-            else params.normalize_slots,
-            random_bg_slot=False if not hasattr(params, 'random_bg_slot') else
-            params.random_bg_slot)
+            normalize_slots=params.normalize_slots,
+            random_bg_slot=params.random_bg_slot)
     return text2slot_model
 
 
@@ -173,6 +171,7 @@ def main(params: Optional[SlotAttentionParams] = None):
     process_ckp(args.weight)  # enable mid-epoch resuming
     trainer = Trainer(
         logger=logger if params.is_logger_enabled else False,
+        gradient_clip_val=params.grad_clip_norm,
         # TODO: 'ddp' doesn't work on Vector cluster!
         accelerator="dp" if params.gpus > 1 else None,
         num_sanity_val_steps=params.num_sanity_val_steps

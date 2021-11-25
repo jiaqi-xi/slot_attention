@@ -49,6 +49,43 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         self.stop_recur_slot_grad = stop_recur_slot_grad
 
     def forward(self, x):
+        """x: [B, num_clips, C, H, W]"""
+        if self.training:
+            return self._forward(x)
+        # num_clips could be too long, manually do batch processing here
+        B, num_clips, C, H, W = x.shape
+        clip_len = num_clips  # every time feed this length of video to model
+        while True:
+            try:
+                _ = self._forward(x[:, :clip_len])
+                del _
+                torch.cuda.empty_cache()
+                break
+            except RuntimeError:  # CUDA out of memory
+                clip_len = clip_len // 2 + 1
+        # no need to split
+        if clip_len == num_clips:
+            return self._forward(x)
+        # batch processing
+        all_rec_combs, all_recs, all_masks, all_slots = [], [], [], []
+        prev_slots = None
+        for clip_idx in range(0, num_clips, clip_len):
+            rec_combs, recs, masks, slots = self._forward(
+                x[:, clip_idx:clip_idx + clip_len], prev_slots)
+            all_rec_combs.append(rec_combs.unflatten(0, (B, -1)).cpu().detach())
+            all_recs.append(recs.unflatten(0, (B, -1)).cpu().detach())
+            all_masks.append(masks.unflatten(0, (B, -1)).cpu().detach())
+            all_slots.append(slots.unflatten(0, (B, -1)).cpu().detach())
+            prev_slots = slots.unflatten(0, (B, -1))[:, -1].detach().clone()
+            del rec_combs, recs, masks, slots
+            torch.cuda.empty_cache()
+        rec_combs = torch.cat(all_rec_combs, dim=1).flatten(0, 1)
+        recs = torch.cat(all_recs, dim=1).flatten(0, 1)
+        masks = torch.cat(all_masks, dim=1).flatten(0, 1)
+        slots = torch.cat(all_slots, dim=1).flatten(0, 1)
+        return rec_combs, recs, masks, slots
+
+    def _forward(self, x, slot_prev=None):
         torch.cuda.empty_cache()
 
         num_clips = x.shape[1]
@@ -72,7 +109,6 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         encoder_out = encoder_out.reshape(batch_size, num_clips,
                                           height * width, -1)
         slots = []
-        slot_prev = None
         for clip_idx in range(num_clips):
             # [batch_size, self.num_slots, self.slot_size]
             one_slot = self.slot_attention(encoder_out[:, clip_idx], slot_prev)
@@ -89,9 +125,9 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         batch_size, num_slots, slot_size = slots.shape
 
         # spatial broadcast
-        slots = slots.view(batch_size * num_slots, slot_size, 1, 1)
-        decoder_in = slots.repeat(1, 1, self.decoder_resolution[0],
-                                  self.decoder_resolution[1])
+        decoder_in = slots.view(batch_size * num_slots, slot_size, 1, 1)
+        decoder_in = decoder_in.repeat(1, 1, self.decoder_resolution[0],
+                                       self.decoder_resolution[1])
 
         out = self.decoder_pos_embedding(decoder_in)
         out = self.decoder(out)
@@ -101,12 +137,13 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         recons = out[:, :, :num_channels, :, :]  # [B, num_slots, C, H, W]
         masks = out[:, :, -1:, :, :]  # [B, num_slots, 1, H, W]
         masks = F.softmax(masks, dim=1)
-        slot_recons = recons * masks + (1 - masks)
+        # slot_recons = recons * masks + (1 - masks)
         recon_combined = torch.sum(recons * masks, dim=1)
         # recon_combined: [B, C, H, W]
         # recons: [B, num_slots, C, H, W]
         # masks: [B, num_slots, 1, H, W]
+        # slots: [B, num_slots, slot_size]
         # slot_recons: [B, num_slots, C, H, W]
         # TODO: I return slot_recons instead of slots here!
         # TODO: this is different from the other slot-att models
-        return recon_combined, recons, masks, slot_recons
+        return recon_combined, recons, masks, slots  # slot_recons

@@ -28,11 +28,13 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
                  split: str = "train",
                  clip_len: int = 34,
                  is_video: bool = False,
-                 shuffle_obj: bool = False):
+                 shuffle_obj: bool = False,
+                 pad_text: str = ''):
         # TODO: we assume `self.max_n_objects` == 6 here!
         super().__init__(data_root, max_num_images, clip_transforms,
                          max_n_objects, split, clip_len, is_video, True, True)
         self.shuffle_obj = shuffle_obj
+        self.pad_text = pad_text
 
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""
@@ -79,6 +81,10 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         # shuffle the order of objects
         if self.split == 'train' and self.shuffle_obj:
             np.random.shuffle(texts)
+        if self.pad_text:  # pad with some special texts e.g. 'no object'
+            texts = texts + [
+                self.pad_text,
+            ] * (1 + self.max_n_objects - len(texts))
         return texts
 
 
@@ -93,11 +99,13 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
         num_workers: int,
         max_n_objects: int = 6,
         shuffle_obj: bool = False,
+        pad_text: str = '',
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
                          clip_transforms, num_workers, max_n_objects)
 
         self.shuffle_obj = shuffle_obj
+        self.pad_text = pad_text
         self.train_dataset = ObjCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
@@ -105,6 +113,7 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             max_n_objects=self.max_n_objects,
             split='train',
             shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
         )
         self.val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
@@ -113,6 +122,7 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             max_n_objects=self.max_n_objects,
             split='val',
             shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
         )
 
 

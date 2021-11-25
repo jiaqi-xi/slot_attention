@@ -79,6 +79,7 @@ class SlotAttentionVideoMethod(pl.LightningModule):
         # masks: [B*clip, num_slots, 1, H, W]
         # slots: [B*clip, num_slots, C, H, W]
         recon_combined, recons, masks, slots = self.model.forward(batch)
+        batch = batch.to(masks.device)
 
         # combine images in a nice way so we can display all outputs in one grid, output rescaled to be between 0 and 1
         out = to_rgb_from_tensor(
@@ -119,6 +120,7 @@ class SlotAttentionVideoMethod(pl.LightningModule):
                 video = video.to(self.device)
             output = self.model.forward(video.unsqueeze(0))
             recon_combined, recons, masks, slots = output
+            video = video.to(masks.device)
             # combine images in a nice way so we can display all outputs in one grid, output rescaled to be between 0 and 1
             out = to_rgb_from_tensor(
                 torch.cat(

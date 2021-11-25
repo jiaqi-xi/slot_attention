@@ -179,6 +179,8 @@ class ObjMLPText2Slot(nn.Module):
     Args:
         in_channels (int): channels of input text features.
         hidden_sizes (Tuple[int]): MLPs hidden sizes.
+        random_bg_slot (bool): Whether bg slot is learnable.
+        bg_same_slot (bool): Whether input the same vector for bg slot.
     """
 
     def __init__(self,
@@ -187,12 +189,14 @@ class ObjMLPText2Slot(nn.Module):
                  hidden_sizes: Tuple[int] = (256, ),
                  use_bn: bool = False,
                  normalize_slots: bool = False,
-                 random_bg_slot: bool = False):
+                 random_bg_slot: bool = False,
+                 bg_same_slot: bool = False):
         super(ObjMLPText2Slot, self).__init__()
         self.in_channels = in_channels
         self.slot_size = slot_size
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.normalize_slots = normalize_slots
+        self.bg_same_slot = bg_same_slot
 
         # this is for the background slots that don't have predicted embedding
         if random_bg_slot:
@@ -230,8 +234,13 @@ class ObjMLPText2Slot(nn.Module):
         assert text_features.shape[0] == padding_mask.sum()
         obj_slots = self.mlp(text_features)
         pad_num = padding_mask.numel() - text_features.shape[0]
-        slots_init = torch.randn(pad_num, self.slot_size).type_as(obj_slots)
-        pad_slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
+        if self.bg_same_slot:
+            pad_slots = self.slots_mu + torch.zeros(
+                pad_num, self.slot_size).type_as(self.slots_mu)
+        else:
+            slots_init = torch.randn(pad_num,
+                                     self.slot_size).type_as(self.slots_mu)
+            pad_slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
         # do the padding and build final slots
         bs, num_slots = padding_mask.shape
         slots = torch.empty((bs, num_slots, self.slot_size)).type_as(obj_slots)
