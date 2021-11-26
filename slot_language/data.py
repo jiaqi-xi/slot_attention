@@ -101,8 +101,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         if self.is_video:
             video = self._get_video(index)  # clip pre-processed video frames
             raw_text = [
-                self._generate_text(index * self.base_num + idx)
-                for idx in range(self.base_num)
+                self._generate_text(index) for _ in range(self.clip_len)
             ]  # raw
             text = clip.tokenize(raw_text)  # tokenize to [N, L]
             assert text.shape[0] == video.shape[0]

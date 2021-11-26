@@ -43,8 +43,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         if self.is_video:
             video = self._get_video(index)  # clip pre-processed video frames
             raw_text = [
-                self._generate_text(index * self.base_num + idx)
-                for idx in range(self.base_num)
+                self._generate_text(index) for _ in range(self.clip_len)
             ]  # raw
             token = [self._pad_text_tokens(text) for text in raw_text]
             return dict(

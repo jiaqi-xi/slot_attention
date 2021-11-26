@@ -459,7 +459,7 @@ class SlotAttentionModel(nn.Module):
         # same convolutions
         modules.append(
             nn.Conv2d(
-                self.dec_hiddens[-1],
+                self.dec_channels[-1],
                 4,
                 kernel_size=3,
                 stride=1,

@@ -54,8 +54,6 @@ def build_model(params: SlotAttentionParams):
         out_features=params.out_features,
         enc_hiddens=params.enc_hiddens,
         use_unet=False if not hasattr(params, 'use_unet') else params.use_unet,
-        relu_before_pe=True
-        if not hasattr(params, 'relu_before_pe') else params.relu_before_pe,
         dec_hiddens=params.dec_hiddens,
         decoder_resolution=params.decoder_resolution,
         use_deconv=params.use_deconv,

@@ -312,6 +312,10 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         enc_resolution: Tuple[int, int] = (7, 7),  # output res of encoder
         visual_feats_channels: int = 512,
     ):
+        if use_unet:
+            assert not use_clip_vision
+        self.use_unet = use_unet
+
         super().__init__(
             clip_model,
             use_clip_vision,
@@ -334,10 +338,6 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             use_word_set=False,
             use_padding_mask=False,
         )
-
-        if use_unet:
-            assert not use_clip_vision
-        self.use_unet = use_unet
 
     def _build_slot_attention(self):
         slot_attn = BgSepSlotAttention if \
@@ -427,6 +427,9 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         enc_resolution: Tuple[int, int] = (7, 7),  # output res of encoder
         visual_feats_channels: int = 512,
     ):
+        self.enc_pos_size = enc_pos_size
+        self.dec_pos_size = dec_pos_size
+
         super().__init__(
             clip_model,
             use_clip_vision,
@@ -449,17 +452,11 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
             visual_feats_channels=visual_feats_channels,
         )
 
-        self.enc_pos_size = enc_pos_size
-        self.dec_pos_size = dec_pos_size
-
         # Build Encoder related modules
         self.pos_ratio = enc_pos_size / slot_size
         self.encoder_pos_embedding = ConcatSoftPositionEmbed(
             3, int(self.visual_feats_channels * self.pos_ratio), self.enc_resolution)
         del self.encoder_out_layer  # no mixing pos and sem
-
-        # build Decoder related modules
-        self._build_decoder()
 
     def _build_slot_attention(self):
         slot_attn = SemPosBgSepSlotAttention if \
