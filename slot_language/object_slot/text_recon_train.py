@@ -41,10 +41,10 @@ def build_slot_attention_model(params: SlotAttentionParams):
             enc_channels=params.enc_channels,
             dec_channels=params.dec_channels,
             dec_resolution=params.dec_resolution,
-            use_entropy_loss=params.use_entropy_loss,
             use_bg_sep_slot=params.use_bg_sep_slot,
             enc_resolution=params.enc_resolution,
             visual_feats_channels=params.clip_vision_channel,
+            use_entropy_loss=params.use_entropy_loss,
         )
     else:
         print('Using ObjTwoClsSlotAttentionModel!')
@@ -68,10 +68,10 @@ def build_slot_attention_model(params: SlotAttentionParams):
             enc_channels=params.enc_channels,
             dec_channels=params.dec_channels,
             dec_resolution=params.dec_resolution,
-            use_entropy_loss=params.use_entropy_loss,
             use_bg_sep_slot=params.use_bg_sep_slot,
             enc_resolution=params.enc_resolution,
             visual_feats_channels=params.clip_vision_channel,
+            use_entropy_loss=params.use_entropy_loss,
         )
     return model
 

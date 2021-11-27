@@ -1,6 +1,6 @@
 import json
 import os
-import clip
+import copy
 import numpy as np
 from PIL import Image
 from typing import Callable
@@ -11,6 +11,9 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
+import torchvision.transforms.functional as TF
+
+import clip
 
 
 class CLEVRVisionLanguageViewpointDataset(Dataset):
@@ -438,4 +441,137 @@ class ObjRecurCLEVRVisionLanguageViewpointDataModule(
             shuffle_obj=self.shuffle_obj,
             pad_text=self.pad_text,
             sample_clip_num=self.sample_clip_num,
+        )
+
+
+class ObjAugCLEVRVisionLanguageViewpointDataset(
+        ObjCLEVRVisionLanguageViewpointDataset):
+
+    def __init__(
+        self,
+        data_root: str,
+        max_num_images: Optional[int],
+        clip_transforms: Callable,
+        max_n_objects: int = 2,
+        split: str = "train",
+        clip_len: int = 11,
+        is_video: bool = False,
+        shuffle_obj: bool = False,
+        pad_text: str = 'background',
+        flip_img: bool = False,
+    ):
+        super().__init__(
+            data_root,
+            max_num_images,
+            clip_transforms,
+            max_n_objects=max_n_objects,
+            split=split,
+            clip_len=clip_len,
+            is_video=is_video,
+            shuffle_obj=shuffle_obj,
+            pad_text=pad_text)
+        self.flip_img = flip_img
+
+    def __getitem__(self, index: int):
+        """Load one video and get only one frame from it"""
+        if self.is_video:
+            return super().__getitem__(index)
+
+        # load one frame and potentially do horizontal flip
+        img = self._get_frame(index)  # clip pre-processed img tensor
+        if self.flip_img:
+            flipped_img = TF.hflip(img)
+        else:
+            flipped_img = img.detach().clone()
+        if self.split != 'train':
+            text = self._generate_text(index)
+            tokens = self._tokenize_text(text)
+            return dict(
+                img=img,
+                flipped_img=flipped_img,
+                is_flipped=self.flip_img,
+                text=tokens)
+
+        # load text description and potentially do text shuffling
+        text, shuffled_text, shuffled_idx = self._generate_text(index)
+        tokens = self._tokenize_text(text)
+        shuffled_tokens = self._tokenize_text(shuffled_text)
+        return dict(
+            img=img,
+            flipped_img=flipped_img,
+            is_flipped=self.flip_img,
+            text=tokens,
+            shuffled_text=shuffled_tokens,
+            shuffled_idx=shuffled_idx,
+            is_shuffled=self.shuffle_obj)
+
+    def _generate_text(self, index: int):
+        """Generate text descriptions of each object in the scene."""
+        img_idx = self._get_idx(index)[0]
+        anno = self.annos[img_idx]
+        colors = [obj['color'] for obj in anno['objects']]
+        shapes = [obj['shape'] for obj in anno['objects']]
+        texts = [
+            'a {} {}'.format(color, shape)
+            for color, shape in zip(colors, shapes)
+        ]
+        # pad with some special texts, e.g. 'background'
+        texts = texts + [self.pad_text] * (self.text_num - len(texts))
+        # shuffle the order of objects
+        if self.split == 'train':
+            idx = np.arange(len(texts))
+            if self.shuffle_obj:
+                np.random.shuffle(idx)
+                shuffled_texts = [texts[i] for i in idx]
+            else:
+                shuffled_texts = copy.deepcopy(texts)
+            return texts, shuffled_texts, idx
+        return texts
+
+
+class ObjAugCLEVRVisionLanguageViewpointDataModule(
+        ObjCLEVRVisionLanguageViewpointDataModule):
+
+    def __init__(
+        self,
+        data_root: str,
+        train_batch_size: int,
+        val_batch_size: int,
+        clip_transforms: Callable,
+        num_workers: int,
+        max_n_objects: int = 2,
+        shuffle_obj: bool = False,
+        pad_text: str = 'background',
+        flip_img: bool = False,
+    ):
+        super().__init__(
+            data_root,
+            train_batch_size,
+            val_batch_size,
+            clip_transforms,
+            num_workers,
+            max_n_objects=max_n_objects,
+            shuffle_obj=shuffle_obj,
+            pad_text=pad_text)
+
+        self.flip_img = flip_img
+        self.train_dataset = ObjAugCLEVRVisionLanguageViewpointDataset(
+            data_root=self.data_root,
+            max_num_images=self.num_train_images,
+            clip_transforms=self.clip_transforms,
+            max_n_objects=self.max_n_objects,
+            split='train',
+            shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
+            flip_img=self.flip_img,
+        )
+        self.val_dataset = ObjAugCLEVRVisionLanguageViewpointDataset(
+            data_root=self.data_root,
+            max_num_images=self.num_val_images,
+            clip_transforms=self.clip_transforms,
+            max_n_objects=self.max_n_objects,
+            split='val',
+            shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
+            flip_img=self.flip_img,
         )

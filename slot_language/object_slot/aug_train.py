@@ -15,10 +15,22 @@ from aug_method import ObjAugSlotAttentionVideoLanguageMethod as SlotAttentionMe
 from aug_model import ObjAugSlotAttentionModel
 from aug_params import SlotAttentionParams
 
+sys.path.append('../viewpoint_dataset/')
+
+from viewpoint_data import ObjAugCLEVRVisionLanguageViewpointDataModule
+
 
 def build_data_module(params: SlotAttentionParams):
+    if '4obj' in params.data_root:
+        assert params.num_slots == 5
+    elif 'viewpoint' in params.data_root:
+        assert params.num_slots == 3
+    else:
+        assert params.num_slots == 7
     clip_transforms = build_data_transforms(params)
-    clevr_datamodule = ObjAugCLEVRVisionLanguageCLIPDataModule(
+    data_module = ObjAugCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
+        params.data_root else ObjAugCLEVRVisionLanguageCLIPDataModule
+    clevr_datamodule = data_module(
         data_root=params.data_root,
         train_batch_size=params.batch_size,
         val_batch_size=params.val_batch_size,
@@ -34,7 +46,10 @@ def build_data_module(params: SlotAttentionParams):
 
 def build_aug_slot_attention_model(params: SlotAttentionParams):
     model = build_slot_attention_model(params)
-    model = ObjAugSlotAttentionModel(model=model)
+    model = ObjAugSlotAttentionModel(
+        model=model,
+        use_contrastive_loss=params.use_contrastive_loss,
+        contrastive_T=params.contrastive_T)
     return model
 
 

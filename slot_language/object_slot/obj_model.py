@@ -291,9 +291,11 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             # not generating slots
             return None, None, None
         # we treat each obj as batch dim and get global text (for each phrase)
+        bs = tokens.shape[0]
+        assert tokens.shape[1] == self.num_slots
         text_features = self.clip_model.encode_text(
-            tokens, lin_proj=False, per_token_emb=False,
-            return_mask=False)  # [K, C]
+            tokens.flatten(0, 1), lin_proj=False, per_token_emb=False,
+            return_mask=False).unflatten(0, (bs, self.num_slots))  # [B, N, C]
         text_features = text_features.type(self.dtype)
         slots, _ = self.text2slot_model(text_features)
         return slots, _, text_features

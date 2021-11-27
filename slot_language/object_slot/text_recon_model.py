@@ -263,7 +263,7 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
 
         Args:
             img_feats: [B, C, H, W]
-            text_feats: [K, C]
+            text_feats: [B, num_slots, C]
             recon_imgs: [B, num_slots, C, H, W]
             slots_masks: [B, num_slots, 1, H, W]
             slot_emb: [B, num_slots, C]
@@ -291,6 +291,7 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
             (slot_emb.shape[0], slot_emb.shape[1])).type_as(slot_emb).bool()
         grouped_feats = grouped_feats[obj_mask]  # [K, C]
         pred_text_feats = self.recon_mlp(grouped_feats)
+        text_feats = text_feats[obj_mask]  # [K, C]
 
         if self.normalize_feats:
             text_feats = F.normalize(text_feats, p=2, dim=-1)

@@ -46,6 +46,7 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
 
         self.num_clips = num_clips
         self.stop_recur_slot_grad = stop_recur_slot_grad
+        self._build_predictor(recur_predictor)
 
     def _build_predictor(self, recur_predictor):
         if not recur_predictor:
