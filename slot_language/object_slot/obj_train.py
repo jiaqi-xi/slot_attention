@@ -58,9 +58,7 @@ def build_text2slot_model(params: SlotAttentionParams):
             params.slot_size,
             params.text2slot_hidden_sizes,
             use_bn=False,
-            normalize_slots=params.normalize_slots,
-            random_bg_slot=params.random_bg_slot,
-            bg_same_slot=params.bg_same_slot)
+            normalize_slots=params.normalize_slots)
     return text2slot_model
 
 

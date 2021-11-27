@@ -34,12 +34,12 @@ class SlotAttentionParams:
     recon_cls_mlps: Tuple[int, ...] = ()
     hard_visual_masking: bool = False
     recon_from: bool = 'slots'
-    color_cls_loss: float = 0.01
-    shape_cls_loss: float = 0.01
+    color_cls_loss_w: float = 0.01
+    shape_cls_loss_w: float = 0.01
     recon_feats: bool = False
     recon_feats_mlp: Tuple[int, ...] = ()
     normalize_feats: bool = False
-    text_recon_loss: float = 0.01
+    text_recon_loss_w: float = 0.01
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
@@ -54,15 +54,13 @@ class SlotAttentionParams:
     # for MLP
     text2slot_hidden_sizes: Tuple[int] = (512, )
     normalize_slots: bool = False
-    random_bg_slot: bool = False  # default use trainable background slot
-    bg_same_slot: bool = False
 
     # data
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video_4obj"
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     shuffle_obj: bool = True  # shuffle cls labels to avoid trivial solution
-    pad_text: str = ''
+    pad_text: str = 'background'
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
 

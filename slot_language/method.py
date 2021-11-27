@@ -17,7 +17,6 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
         self.model = model
         self.datamodule = datamodule
         self.params = params
-        self.entropy_loss_w = params.entropy_loss_w
 
     def forward(self, input: Tensor, **kwargs) -> Tensor:
         return self.model(input, **kwargs)
@@ -25,8 +24,10 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
     def training_step(self, batch, batch_idx, optimizer_idx=0):
         train_loss = self.model.loss_function(batch)
         loss = train_loss['recon_loss']
-        if 'entropy' in train_loss.keys():
-            loss = loss + train_loss['entropy'] * self.entropy_loss_w
+        for loss_name, loss_value in train_loss.items():
+            assert loss_name.endswith('_loss')
+            if loss_name != 'recon_loss':
+                loss = loss + loss_value * eval(f'self.params.{loss_name}_w')
         train_loss['loss'] = loss
         logs = {key: val.item() for key, val in train_loss.items()}
         # record training time
@@ -123,12 +124,7 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
         avg_recon_loss = torch.stack([x['recon_loss'] for x in outputs]).mean()
         logs = {
             'val_loss': avg_recon_loss,
-            'val_recon_loss': avg_recon_loss,
         }
-        if 'entropy' in outputs[0].keys():
-            avg_entropy = torch.stack([x['entropy'] for x in outputs]).mean()
-            logs['val_entropy'] = avg_entropy
-            logs['val_loss'] += avg_entropy * self.entropy_loss_w
         self.log_dict(logs, sync_dist=True)
         print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))
 

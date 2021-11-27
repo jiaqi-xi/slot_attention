@@ -91,7 +91,7 @@ class SlotAttention(nn.Module):
             slots = slots_mu + slots_log_sigma.exp() * slots_init
         return slots
 
-    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
+    def forward(self, inputs, slots_mu, slots_log_sigma=None):
         """Forward function.
 
         Args:
@@ -247,7 +247,7 @@ class BgSepSlotAttention(nn.Module):
             bg_slots = bg_mu + bg_log_sigma.exp() * bg_slots_init.type_as(mu)
         return slots, bg_slots
 
-    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
+    def forward(self, inputs, slots_mu, slots_log_sigma=None):
         """Forward function.
 
         Args:
@@ -338,12 +338,12 @@ class SlotAttentionModel(nn.Module):
         enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64),
         dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
         dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224
-        use_entropy_loss: bool = False,
         use_bg_sep_slot: bool = False,
         enc_resolution: Tuple[int, int] = (7, 7),  # output res of encoder
         visual_feats_channels: int = 512,  # output channel of encoder
         use_word_set: bool = False,
         use_padding_mask: bool = False,
+        use_entropy_loss: bool = False,
     ):
         super().__init__()
         self.num_slots = num_slots
@@ -364,7 +364,6 @@ class SlotAttentionModel(nn.Module):
         self.use_padding_mask = use_padding_mask
 
         self.use_bg_sep_slot = use_bg_sep_slot
-        self.use_entropy_loss = use_entropy_loss  # -p*log(p)
 
         # Pre-trained CLIP model, we freeze it here
         self.clip_model = clip_model.eval()
@@ -380,6 +379,9 @@ class SlotAttentionModel(nn.Module):
         if self.use_clip_text:
             assert text2slot_model is not None
         self.text2slot_model = text2slot_model
+
+        # extra loss besides reconstruction loss
+        self.use_entropy_loss = use_entropy_loss  # -p*log(p)
 
         self._build_encoder()
         self._build_decoder()
@@ -478,6 +480,7 @@ class SlotAttentionModel(nn.Module):
             encoder_out = encoder_out.type(self.dtype)
         else:
             encoder_out = self.encoder(img)
+        img_feats = encoder_out  # Conv features without pos_enc
         encoder_out = self.encoder_pos_embedding(encoder_out)
         # `encoder_out` has shape: [batch_size, C, height, width]
         encoder_out = torch.flatten(encoder_out, start_dim=2, end_dim=3)
@@ -485,7 +488,7 @@ class SlotAttentionModel(nn.Module):
         encoder_out = encoder_out.permute(0, 2, 1)
         encoder_out = self.encoder_out_layer(encoder_out)
         # `encoder_out` has shape: [batch_size, height*width, C]
-        return encoder_out
+        return encoder_out, img_feats
 
     def _get_slot_embedding(self, text):
         """Encode text, generate slot embeddings."""
@@ -505,29 +508,33 @@ class SlotAttentionModel(nn.Module):
         else:
             text_features = text_features.type(self.dtype)
         slot_mu, slot_log_sigma = self.text2slot_model(text_features)
-        return slot_mu, slot_log_sigma
+        return slot_mu, slot_log_sigma, text_features
 
     def forward(self, x):
         torch.cuda.empty_cache()
 
-        slots = self.encode(x)
+        slots, img_feats, text_feats = self.encode(x)
 
         recon_combined, recons, masks, slots = self.decode(
             slots, x['img'].shape)
-        return recon_combined, recons, masks, slots
+
+        if not self.training:
+            return recon_combined, recons, masks, slots
+        return recon_combined, recons, masks, slots, img_feats, text_feats
 
     def encode(self, x):
         """Encode from img to slots."""
         img, text = x['img'], x['text']
-        encoder_out = self._get_encoder_out(img)  # transformed vision feature
+        encoder_out, img_feats = self._get_encoder_out(img)
         # `encoder_out` has shape: [batch_size, height*width, filter_size]
+        # `img_feats` has shape: [bs, visual_feats_channels, height, width]
 
         # slot initialization
-        slot_mu, slot_log_sigma = self._get_slot_embedding(text)
+        slot_mu, slot_log_sigma, text_feats = self._get_slot_embedding(text)
 
         # (batch_size, self.num_slots, self.slot_size)
         slots = self.slot_attention(encoder_out, slot_mu, slot_log_sigma)
-        return slots
+        return slots, img_feats, text_feats
 
     def decode(self, slots, img_shape):
         """Decode from slots to reconstructed images and masks."""
@@ -551,9 +558,28 @@ class SlotAttentionModel(nn.Module):
         recon_combined = torch.sum(recons * masks, dim=1)
         return recon_combined, recons, masks, slots
 
-    def loss_function(self, input):
+    def eval_loss_function(self, input):
+        """Loss computation in eval, we only care about reconstruction loss."""
         recon_combined, recons, masks, slots = self.forward(input)
         loss = F.mse_loss(recon_combined, input['img'])
+        loss_dict = {
+            'recon_loss': loss,
+        }
+        return loss_dict
+
+    def loss_function(self, input):
+        if not self.training:
+            return self.eval_loss_function(input)
+
+        recon_combined, recons, masks, slots, \
+            img_feats, text_feats = self.forward(input)
+        return self.calc_train_loss(input['img'], recon_combined, recons,
+                                    masks, slots, img_feats, text_feats)
+
+    def calc_train_loss(self, img, recon_combined, recons, masks, slots,
+                        img_feats, text_feats):
+        """Compute loss that are general for SlotAttn models."""
+        loss = F.mse_loss(recon_combined, img)
         loss_dict = {
             "recon_loss": loss,
         }
@@ -561,7 +587,7 @@ class SlotAttentionModel(nn.Module):
         if self.use_entropy_loss:
             masks = masks[:, :, 0]  # [B, num_slots, H, W]
             entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
-            loss_dict['entropy'] = entropy_loss
+            loss_dict['entropy_loss'] = entropy_loss
         return loss_dict
 
     @property

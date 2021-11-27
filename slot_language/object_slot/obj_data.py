@@ -30,44 +30,40 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         clip_len: int = 34,
         is_video: bool = False,
         shuffle_obj: bool = False,
-        pad_text: str = '',
+        pad_text: str = 'background',
     ):
         # TODO: we assume `self.max_n_objects` == 6 here!
         super().__init__(data_root, max_num_images, clip_transforms,
                          max_n_objects, split, clip_len, is_video, True, True)
+        assert pad_text  # shouldn't be ''
         self.shuffle_obj = shuffle_obj
         self.pad_text = pad_text
+        self.text_num = 1 + self.max_n_objects
 
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""
         if self.is_video:
             video = self._get_video(index)  # clip pre-processed video frames
-            raw_text = [
-                self._generate_text(index) for _ in range(self.clip_len)
-            ]  # raw
-            token = [self._pad_text_tokens(text) for text in raw_text]
+            # TODO: since in CLEVR, text is the same through entire video
+            # TODO: so I can simply repeat and stack them
+            raw_text = [self._generate_text(index)] * self.clip_len  # raw
+            tokens = [self._tokenize_text(text) for text in raw_text]
             return dict(
-                video=video,
-                text=torch.stack([t[0] for t in token], dim=0),
-                padding=torch.stack([t[1] for t in token], dim=0),
-                raw_text=', '.join(raw_text[0]))
+                video=video,  # [clip_len, C, H, W]
+                text=torch.stack(tokens, dim=0),  # [clip_len, N + 1, C]
+                raw_text=', '.join(raw_text[0]))  # one sentence
 
         img = self._get_frame(index)  # clip pre-processed img tensor
         text = self._generate_text(index)  # raw text
-        token, padding = self._pad_text_tokens(text)  # tokenize
+        tokens = self._tokenize_text(text)  # tokenize
 
-        return dict(img=img, text=token, padding=padding)
+        return dict(img=img, text=tokens)
 
-    def _pad_text_tokens(self, texts: Tuple[str]):
+    def _tokenize_text(self, texts: Tuple[str]):
         """Tokenize texts and pad to `self.max_n_objects`"""
-        tokens = clip.tokenize(texts)  # [n, C]
-        # TODO: we're using `+1` to count for the background slot
-        num_pad = 1 + self.max_n_objects - tokens.shape[0]
-        pad_tokens = torch.zeros(num_pad, tokens.shape[1], dtype=tokens.dtype)
-        padding = torch.cat(
-            [torch.ones(tokens.shape[0]),
-             torch.zeros(num_pad)], dim=0).long()
-        return torch.cat([tokens, pad_tokens], dim=0), padding
+        assert len(texts) == self.text_num
+        tokens = clip.tokenize(texts)  # [N + 1, C]
+        return tokens
 
     def _generate_text(self, index: int):
         """Generate text descriptions of each object in the scene."""
@@ -80,10 +76,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
             for color, shape in zip(colors, shapes)
         ]
         # pad with some special texts, e.g. 'background'
-        if self.pad_text:
-            texts = texts + [
-                self.pad_text,
-            ] * (1 + self.max_n_objects - len(texts))
+        texts = texts + [self.pad_text] * (self.text_num - len(texts))
         # shuffle the order of objects
         if self.split == 'train' and self.shuffle_obj:
             np.random.shuffle(texts)
@@ -101,7 +94,7 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
         num_workers: int,
         max_n_objects: int = 6,
         shuffle_obj: bool = False,
-        pad_text: str = '',
+        pad_text: str = 'background',
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
                          clip_transforms, num_workers, max_n_objects)
@@ -144,7 +137,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
             clip_len: int = 34,
             is_video: bool = False,
             shuffle_obj: bool = False,
-            pad_text: str = '',
+            pad_text: str = 'background',
             sample_clip_num: int = 2,  # loaded clips per video
     ):
         # TODO: we assume `self.max_n_objects` == 6 here!
@@ -160,14 +153,13 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
         if self.is_video:
             data = super().__getitem__(index)
             data['text'] = data['text'][:1]
-            data['padding'] = data['padding'][:1]
             return data
 
         clip = self._get_clip(index)  # clip pre-processed img tensor
         text = self._generate_text(index)  # raw text
-        token, padding = self._pad_text_tokens(text)  # tokenize
+        tokens = self._tokenize_text(text)  # tokenize
 
-        return dict(img=clip, text=token, padding=padding)
+        return dict(img=clip, text=tokens)
 
     def _get_clip(self, index: int):
         """Get one random frame from the video."""
@@ -209,7 +201,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
         num_workers: int,
         max_n_objects: int = 6,
         shuffle_obj: bool = False,
-        pad_text: str = '',
+        pad_text: str = 'background',
         sample_clip_num: int = 2,
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
@@ -254,7 +246,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
                  clip_len: int = 34,
                  is_video: bool = False,
                  shuffle_obj: bool = False,
-                 pad_text: str = '',
+                 pad_text: str = 'background',
                  flip_img: bool = False):
         super().__init__(data_root, max_num_images, clip_transforms,
                          max_n_objects, split, clip_len, is_video, shuffle_obj,
@@ -274,45 +266,25 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
             flipped_img = img.detach().clone()
         if self.split != 'train':
             text = self._generate_text(index)
-            token, padding = self._pad_text_tokens(text)
+            tokens = self._tokenize_text(text)
             return dict(
                 img=img,
                 flipped_img=flipped_img,
                 is_flipped=self.flip_img,
-                text=token,
-                padding=padding)
+                text=tokens)
 
         # load text description and potentially do text shuffling
-        text, shuffled_texts, shuffled_idx = self._generate_text(index)
-        token, padding = self._pad_text_tokens(text)
-        shuffled_token, shuffled_padding, shuffled_idx = self._pad_text_tokens(
-            shuffled_texts, shuffled_idx)
-        assert (padding == shuffled_padding).all()
+        text, shuffled_text, shuffled_idx = self._generate_text(index)
+        tokens = self._tokenize_text(text)
+        shuffled_tokens = self._tokenize_text(shuffled_text)
         return dict(
             img=img,
             flipped_img=flipped_img,
             is_flipped=self.flip_img,
-            text=token,
-            padding=padding,
-            shuffled_text=shuffled_token,
+            text=tokens,
+            shuffled_text=shuffled_tokens,
             shuffled_idx=shuffled_idx,
             is_shuffled=self.shuffle_obj)
-
-    def _pad_text_tokens(self, texts: Tuple[str], text_idx: np.ndarray = None):
-        """Tokenize texts and pad to `self.max_n_objects`"""
-        tokens = clip.tokenize(texts)  # [n, C]
-        # TODO: we're using `+1` to count for the background slot
-        num_pad = 1 + self.max_n_objects - tokens.shape[0]
-        pad_tokens = torch.zeros(num_pad, tokens.shape[1], dtype=tokens.dtype)
-        padded_tokens = torch.cat([tokens, pad_tokens], dim=0)
-        padding = torch.cat(
-            [torch.ones(tokens.shape[0]),
-             torch.zeros(num_pad)], dim=0).long()
-        if text_idx is not None:  # [n]
-            padded_text_idx = -np.ones(padding.shape[0]).astype(np.int32)
-            padded_text_idx[:text_idx.shape[0]] = text_idx
-            return padded_tokens, padding, padded_text_idx
-        return padded_tokens, padding
 
     def _generate_text(self, index: int):
         """Generate text descriptions of each object in the scene."""
@@ -325,10 +297,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
             for color, shape in zip(colors, shapes)
         ]
         # pad with some special texts, e.g. 'background'
-        if self.pad_text:
-            texts = texts + [
-                self.pad_text,
-            ] * (1 + self.max_n_objects - len(texts))
+        texts = texts + [self.pad_text] * (self.text_num - len(texts))
         # shuffle the order of objects
         if self.split == 'train':
             idx = np.arange(len(texts))
@@ -353,7 +322,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
         num_workers: int,
         max_n_objects: int = 6,
         shuffle_obj: bool = False,
-        pad_text: str = '',
+        pad_text: str = 'background',
         flip_img: bool = False,
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,

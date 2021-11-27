@@ -59,6 +59,8 @@ def build_model(params: SlotAttentionParams):
         use_deconv=params.use_deconv,
         slot_mlp_size=params.slot_mlp_size,
         learnable_slot=params.learnable_slot,
+        recur_predictor=params.recur_predictor if hasattr(
+            params, 'recur_predictor') else '',
         stop_recur_slot_grad=params.stop_recur_slot_grad,
         use_entropy_loss=params.use_entropy_loss,
     )

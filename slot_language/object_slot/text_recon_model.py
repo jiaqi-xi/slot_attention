@@ -21,30 +21,32 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             their token_id are [10266, 11353, 22092,  6987]
     """
 
-    def __init__(self,
-                 clip_model: CLIP,
-                 use_clip_vision: bool,
-                 use_clip_text: bool,
-                 text2slot_model: nn.Module,
-                 resolution: Tuple[int, int],
-                 num_slots: int,
-                 num_iterations: int,
-                 viewpoint_dataset: bool = False,
-                 cls_mlps: Tuple[int, ...] = (),
-                 hard_visual_masking: bool = False,
-                 recon_from: str = 'feats',
-                 slot_size: int = 64,
-                 slot_mlp_size: int = 128,
-                 out_features: int = 64,
-                 kernel_size: int = 5,
-                 use_unet: bool = False,
-                 enc_channels: Tuple[int, ...] = ...,
-                 dec_channels: Tuple[int, ...] = ...,
-                 dec_resolution: Tuple[int, int] = ...,
-                 use_entropy_loss: bool = False,
-                 use_bg_sep_slot: bool = False,
-                 enc_resolution: Tuple[int, int] = ...,
-                 visual_feats_channels: int = 512):
+    def __init__(
+        self,
+        clip_model: CLIP,
+        use_clip_vision: bool,
+        use_clip_text: bool,
+        text2slot_model: nn.Module,
+        resolution: Tuple[int, int],
+        num_slots: int,
+        num_iterations: int,
+        viewpoint_dataset: bool = False,
+        cls_mlps: Tuple[int, ...] = (),
+        hard_visual_masking: bool = False,
+        recon_from: str = 'feats',
+        slot_size: int = 64,
+        slot_mlp_size: int = 128,
+        out_features: int = 64,
+        kernel_size: int = 5,
+        use_unet: bool = False,
+        enc_channels: Tuple[int, ...] = ...,
+        dec_channels: Tuple[int, ...] = ...,
+        dec_resolution: Tuple[int, int] = ...,
+        use_bg_sep_slot: bool = False,
+        enc_resolution: Tuple[int, int] = ...,
+        visual_feats_channels: int = 512,
+        use_entropy_loss: bool = False,
+    ):
         super().__init__(
             clip_model,
             use_clip_vision,
@@ -61,10 +63,11 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             enc_channels=enc_channels,
             dec_channels=dec_channels,
             dec_resolution=dec_resolution,
-            use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot,
             enc_resolution=enc_resolution,
-            visual_feats_channels=visual_feats_channels)
+            visual_feats_channels=visual_feats_channels,
+            use_entropy_loss=use_entropy_loss,
+        )
 
         self.color_tokens = torch.tensor(
             [1746, 2866, 1470, 7048, 1901, 5496, 736, 4481])
@@ -80,28 +83,10 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
         assert recon_from in ['feats', 'slots', 'recons']
         self.recon_from = recon_from
 
-    def _get_encoder_out(self, img):
-        """Encode image, potentially add pos enc, apply MLP."""
-        if self.use_clip_vision:
-            encoder_out = self.clip_model.encode_image(
-                img, global_feats=False, downstream=True)  # BCDD
-            encoder_out = encoder_out.type(self.dtype)
-        else:
-            encoder_out = self.encoder(img)
-        img_feats = encoder_out  # Conv features without pos_enc
-        encoder_out = self.encoder_pos_embedding(encoder_out)
-        # `encoder_out` has shape: [batch_size, C, height, width]
-        encoder_out = torch.flatten(encoder_out, start_dim=2, end_dim=3)
-        # `encoder_out` has shape: [batch_size, C, height*width]
-        encoder_out = encoder_out.permute(0, 2, 1)
-        encoder_out = self.encoder_out_layer(encoder_out)
-        # `encoder_out` has shape: [batch_size, height*width, C]
-        return encoder_out, img_feats
-
     def forward(self, x):
         torch.cuda.empty_cache()
 
-        slots, img_feats, obj_mask = self.encode(x)
+        slots, img_feats, text_feats = self.encode(x)
 
         recon_combined, recons, masks, slots = self.decode(
             slots, x['img'].shape)
@@ -110,27 +95,13 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             return recon_combined, recons, masks, slots
 
         pred_colors, pred_shapes, gt_colors, gt_shapes = self._reconstruct_text(
-            img_feats, recons, masks, slots, x['text'], obj_mask)
+            img_feats, recons, masks, slots, x['text'])
 
-        return recon_combined, recons, masks, slots, \
+        return recon_combined, recons, masks, slots, img_feats, text_feats, \
             pred_colors, pred_shapes, gt_colors, gt_shapes
 
-    def encode(self, x):
-        """Encode from img to slots."""
-        img, text, padding = x['img'], x['text'], x['padding']
-        encoder_out, img_feats = self._get_encoder_out(img)
-        # `encoder_out` has shape: [batch_size, height*width, filter_size]
-        # `img_feats` has shape: [B, C, H, W]
-
-        # slot initialization
-        slot_mu, obj_mask = self._get_slot_embedding(text, padding)
-
-        # (batch_size, self.num_slots, self.slot_size)
-        slots = self.slot_attention(encoder_out, slot_mu, fg_mask=obj_mask)
-        return slots, img_feats, obj_mask
-
     def _reconstruct_text(self, img_feats, recon_imgs, slot_masks, slot_emb,
-                          tokens, obj_mask):
+                          tokens):
         """Reconstruct text from grouped visual features.
 
         Args:
@@ -159,6 +130,8 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
             grouped_feats = slot_emb
 
         assert grouped_feats.shape == torch.Size([B, self.num_slots, C])
+        obj_mask = torch.ones(
+            (tokens.shape[0], tokens.shape[1])).type_as(tokens).bool()
         grouped_feats = grouped_feats[obj_mask]
         pred_colors = self.color_mlp(grouped_feats)
         pred_shapes = self.shape_mlp(grouped_feats)
@@ -195,54 +168,48 @@ class ObjTwoClsSlotAttentionModel(ObjSlotAttentionModel):
         return pred_colors, pred_shapes, gt_colors, gt_shapes
 
     def loss_function(self, input):
-        if self.training:
-            recon_combined, recons, masks, slots, pred_colors, pred_shapes, \
-                gt_colors, gt_shapes = self.forward(input)
-        else:
-            recon_combined, recons, masks, slots = self.forward(input)
-        loss = F.mse_loss(recon_combined, input['img'])
-        loss_dict = {
-            'recon_loss': loss,
-        }
-        if self.training:
-            color_cls_loss = F.cross_entropy(pred_colors, gt_colors)
-            shape_cls_loss = F.cross_entropy(pred_shapes, gt_shapes)
-            loss_dict['color_cls_loss'] = color_cls_loss
-            loss_dict['shape_cls_loss'] = shape_cls_loss
-        # masks: [B, num_slots, 1, H, W], apply entropy loss
-        if self.use_entropy_loss:
-            masks = masks[:, :, 0]  # [B, num_slots, H, W]
-            entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
-            loss_dict['entropy'] = entropy_loss
+        if not self.training:
+            return self.eval_loss_function(input)
+
+        recon_combined, recons, masks, slots, img_feats, text_feats, \
+            pred_colors, pred_shapes, gt_colors, gt_shapes = self.forward(input)
+        loss_dict = self.calc_train_loss(input['img'], recon_combined, recons,
+                                         masks, slots, img_feats, text_feats)
+        color_cls_loss = F.cross_entropy(pred_colors, gt_colors)
+        shape_cls_loss = F.cross_entropy(pred_shapes, gt_shapes)
+        loss_dict['color_cls_loss'] = color_cls_loss
+        loss_dict['shape_cls_loss'] = shape_cls_loss
         return loss_dict
 
 
 class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
 
-    def __init__(self,
-                 clip_model: CLIP,
-                 use_clip_vision: bool,
-                 use_clip_text: bool,
-                 text2slot_model: nn.Module,
-                 resolution: Tuple[int, int],
-                 num_slots: int,
-                 num_iterations: int,
-                 recon_mlps: Tuple[int, ...] = (),
-                 hard_visual_masking: bool = False,
-                 normalize_feats: bool = False,
-                 recon_from: str = 'feats',
-                 slot_size: int = 64,
-                 slot_mlp_size: int = 128,
-                 out_features: int = 64,
-                 kernel_size: int = 5,
-                 use_unet: bool = False,
-                 enc_channels: Tuple[int, ...] = ...,
-                 dec_channels: Tuple[int, ...] = ...,
-                 dec_resolution: Tuple[int, int] = ...,
-                 use_entropy_loss: bool = False,
-                 use_bg_sep_slot: bool = False,
-                 enc_resolution: Tuple[int, int] = ...,
-                 visual_feats_channels: int = 512):
+    def __init__(
+        self,
+        clip_model: CLIP,
+        use_clip_vision: bool,
+        use_clip_text: bool,
+        text2slot_model: nn.Module,
+        resolution: Tuple[int, int],
+        num_slots: int,
+        num_iterations: int,
+        recon_mlps: Tuple[int, ...] = (),
+        hard_visual_masking: bool = False,
+        normalize_feats: bool = False,
+        recon_from: str = 'feats',
+        slot_size: int = 64,
+        slot_mlp_size: int = 128,
+        out_features: int = 64,
+        kernel_size: int = 5,
+        use_unet: bool = False,
+        enc_channels: Tuple[int, ...] = ...,
+        dec_channels: Tuple[int, ...] = ...,
+        dec_resolution: Tuple[int, int] = ...,
+        use_bg_sep_slot: bool = False,
+        enc_resolution: Tuple[int, int] = ...,
+        visual_feats_channels: int = 512,
+        use_entropy_loss: bool = False,
+    ):
         ObjSlotAttentionModel.__init__(
             self,
             clip_model,
@@ -260,10 +227,11 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
             enc_channels=enc_channels,
             dec_channels=dec_channels,
             dec_resolution=dec_resolution,
-            use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot,
             enc_resolution=enc_resolution,
-            visual_feats_channels=visual_feats_channels)
+            visual_feats_channels=visual_feats_channels,
+            use_entropy_loss=use_entropy_loss,
+        )
 
         self.recon_mlp = build_mlps(self.slot_size, recon_mlps,
                                     self.text2slot_model.in_channels)
@@ -272,49 +240,10 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
         assert recon_from in ['feats', 'slots', 'recons']
         self.recon_from = recon_from
 
-    def _get_encoder_out(self, img):
-        """Encode image, potentially add pos enc, apply MLP."""
-        if self.use_clip_vision:
-            encoder_out = self.clip_model.encode_image(
-                img, global_feats=False, downstream=True)  # BCDD
-            encoder_out = encoder_out.type(self.dtype)
-        else:
-            encoder_out = self.encoder(img)
-        img_feats = encoder_out  # Conv features without pos_enc
-        # may not applying pos_enc because Encoder in CLIP already does so
-        encoder_out = self.encoder_pos_embedding(encoder_out)
-        # `encoder_out` has shape: [batch_size, C, height, width]
-        encoder_out = torch.flatten(encoder_out, start_dim=2, end_dim=3)
-        # `encoder_out` has shape: [batch_size, C, height*width]
-        encoder_out = encoder_out.permute(0, 2, 1)
-        encoder_out = self.encoder_out_layer(encoder_out)
-        # `encoder_out` has shape: [batch_size, height*width, C]
-        return encoder_out, img_feats
-
-    def _get_slot_embedding(self, tokens, paddings):
-        """Encode text, generate slot embeddings.
-
-        Args:
-            tokens: [B, N, C]
-            padding: [B, N]
-        """
-        if not self.use_clip_text:
-            # not generating slots
-            return None, None
-        # we treat each obj as batch dim and get global text (for each phrase)
-        obj_mask = (paddings == 1)
-        obj_tokens = tokens[obj_mask]  # [K, C]
-        text_features = self.clip_model.encode_text(
-            obj_tokens, lin_proj=False, per_token_emb=False,
-            return_mask=False)  # [K, C]
-        text_features = text_features.type(self.dtype)
-        slots = self.text2slot_model(text_features, obj_mask)
-        return text_features, slots, obj_mask
-
     def forward(self, x):
         torch.cuda.empty_cache()
 
-        slots, img_feats, text_feats, obj_mask = self.encode(x)
+        slots, img_feats, text_feats = self.encode(x)
 
         recon_combined, recons, masks, slots = self.decode(
             slots, x['img'].shape)
@@ -323,28 +252,13 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
             return recon_combined, recons, masks, slots
 
         gt_text_feats, pred_text_feats = self._reconstruct_text(
-            img_feats, text_feats, recons, masks, slots, obj_mask)
+            img_feats, text_feats, recons, masks, slots)
 
-        return recon_combined, recons, masks, slots, \
+        return recon_combined, recons, masks, slots, img_feats, text_feats, \
             gt_text_feats, pred_text_feats
 
-    def encode(self, x):
-        """Encode from img to slots."""
-        img, text, padding = x['img'], x['text'], x['padding']
-        encoder_out, img_feats = self._get_encoder_out(img)
-        # `encoder_out` has shape: [batch_size, height*width, filter_size]
-        # `img_feats` has shape: [B, C, H, W]
-
-        # slot initialization
-        # `text_feats` is of shape [K, C], corresponding to fg slots
-        text_feats, slot_mu, obj_mask = self._get_slot_embedding(text, padding)
-
-        # (batch_size, self.num_slots, self.slot_size)
-        slots = self.slot_attention(encoder_out, slot_mu, fg_mask=obj_mask)
-        return slots, img_feats, text_feats, obj_mask
-
     def _reconstruct_text(self, img_feats, text_feats, recon_imgs, slot_masks,
-                          slot_emb, obj_mask):
+                          slot_emb):
         """Reconstruct text from grouped visual features.
 
         Args:
@@ -373,6 +287,8 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
             grouped_feats = slot_emb
 
         assert grouped_feats.shape == torch.Size([B, self.num_slots, C])
+        obj_mask = torch.ones(
+            (slot_emb.shape[0], slot_emb.shape[1])).type_as(slot_emb).bool()
         grouped_feats = grouped_feats[obj_mask]  # [K, C]
         pred_text_feats = self.recon_mlp(grouped_feats)
 
@@ -383,21 +299,13 @@ class ObjFeatPredSlotAttentionModel(ObjTwoClsSlotAttentionModel):
         return text_feats, pred_text_feats
 
     def loss_function(self, input):
-        if self.training:
-            recon_combined, recons, masks, slots, \
-                gt_text_feats, pred_text_feats = self.forward(input)
-        else:
-            recon_combined, recons, masks, slots = self.forward(input)
-        loss = F.mse_loss(recon_combined, input['img'])
-        loss_dict = {
-            'recon_loss': loss,
-        }
-        if self.training:
-            text_recon_loss = F.mse_loss(pred_text_feats, gt_text_feats)
-            loss_dict['text_recon_loss'] = text_recon_loss
-        # masks: [B, num_slots, 1, H, W], apply entropy loss
-        if self.use_entropy_loss:
-            masks = masks[:, :, 0]  # [B, num_slots, H, W]
-            entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
-            loss_dict['entropy'] = entropy_loss
+        if not self.training:
+            return self.eval_loss_function(input)
+
+        recon_combined, recons, masks, slots, img_feats, text_feats, \
+            gt_text_feats, pred_text_feats = self.forward(input)
+        loss_dict = self.calc_train_loss(input['img'], recon_combined, recons,
+                                         masks, slots, img_feats, text_feats)
+        text_recon_loss = F.mse_loss(pred_text_feats, gt_text_feats)
+        loss_dict['text_recon_loss'] = text_recon_loss
         return loss_dict

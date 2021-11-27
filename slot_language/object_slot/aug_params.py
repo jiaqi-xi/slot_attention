@@ -35,7 +35,12 @@ class SlotAttentionParams:
     dec_pos_size: int = None  # if is int, then use cat instead of add
 
     # transformation equivariance loss
+    flip_img: bool = True
     equivariance_loss_w: float = 1.0
+
+    # contrastive loss on slot embedding
+    use_contrastive_loss: bool = False
+    contrastive_T: float = 1.0
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
@@ -50,16 +55,13 @@ class SlotAttentionParams:
     # for MLP
     text2slot_hidden_sizes: Tuple[int] = (512, )
     normalize_slots: bool = False
-    random_bg_slot: bool = False  # default use trainable background slot
-    bg_same_slot: bool = False
 
     # data
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video_4obj"
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     shuffle_obj: bool = False
-    flip_img: bool = True
-    pad_text: str = ''
+    pad_text: str = 'background'
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
 

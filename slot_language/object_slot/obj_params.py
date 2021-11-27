@@ -47,15 +47,13 @@ class SlotAttentionParams:
     # for MLP
     text2slot_hidden_sizes: Tuple[int] = (512, )
     normalize_slots: bool = False
-    random_bg_slot: bool = False  # default use trainable background slot
-    bg_same_slot: bool = False
 
     # data
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video_4obj"
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     shuffle_obj: bool = False
-    pad_text: str = ''
+    pad_text: str = 'background'
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
 

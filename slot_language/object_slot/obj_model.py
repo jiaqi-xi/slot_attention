@@ -16,9 +16,16 @@ from model import SlotAttention, BgSepSlotAttention, \
 
 
 class ObjSlotAttention(SlotAttention):
-    """A wrapper for SlotAttention to make forward interface consistent."""
+    """A wrapper for SlotAttention."""
 
-    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
+    def forward(self, inputs, slots_mu, slots_log_sigma=None):
+        return super().forward(inputs, slots_mu, slots_log_sigma)
+
+
+class ObjBgSepSlotAttention(BgSepSlotAttention):
+    """A wrapper for BgSepSlotAttention."""
+
+    def forward(self, inputs, slots_mu, slots_log_sigma=None):
         return super().forward(inputs, slots_mu, slots_log_sigma)
 
 
@@ -93,106 +100,13 @@ class SemPosSepSlotAttention(SlotAttention):
                           dim=-1)
         return slots
 
-    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
+    def forward(self, inputs, slots_mu, slots_log_sigma=None):
         # [B, num_slots, C]
         slots = super().forward(inputs, slots_mu, slots_log_sigma)
         slot_size = int(self.slot_size / (1 + self.pos_ratio))
         assert slots.shape[-1] - slot_size == self.pos_dim
         sem_slots, pos_slots = slots[..., :slot_size], slots[..., slot_size:]
         return self.out_mlp(slots), sem_slots, pos_slots
-
-
-class ObjBgSepSlotAttention(BgSepSlotAttention):
-    """Slot attention module that iteratively performs cross-attention.
-
-    The BgSep one processes fg slots and bg slots seperately.
-    TODO: the different of `Obj` version is that, here we may have different
-        number of background slots among batch data. Fortunately, all the
-        operations here are performed along the last dim (slot_size),
-        so we can safely view slots to [N, slot_size] tensor and forward pass.
-    """
-
-    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
-        """Forward function.
-
-        Args:
-            inputs: [B, N, C], flattened per-pixel features
-            slots_mu: if [B, num_slots, C], then directly use it as embeddings;
-                if [B, C], used to do sampling (mu shared by slots)
-            slots_log_sigma: if None, no sampling;
-                if [B, C], used to do sampling (sigma shared by slots)
-            fg_mask: [B, num_slots], boolean mask indicating fg/bg slots
-        """
-        assert len(slots_mu.shape) == 3 and fg_mask is not None
-        bg_mask = ~fg_mask
-        # `inputs` has shape [batch_size, num_inputs, inputs_size].
-        # `num_inputs` is actually the spatial dim of feature map (H*W)
-        bs, num_inputs, inputs_size = inputs.shape
-        inputs = self.norm_inputs(inputs)  # Apply layer norm to the input.
-        # Shape: [batch_size, num_inputs, slot_size].
-        k = self.project_k(inputs)
-        # Shape: [batch_size, num_inputs, slot_size].
-        v = self.project_v(inputs)
-
-        # Initialize the slots. Shape: [batch_size, num_slots, slot_size].
-        slots = slots_mu
-        fg_slots, bg_slots = slots[fg_mask], slots[bg_mask]
-
-        # calculate number of fg slots in each data
-        num_fgs = fg_mask.sum(1)  # [B]
-        fg_start_idx = [num_fgs[:i].sum().item() for i in range(bs)]
-        fg_end_idx = [num_fgs[:i + 1].sum().item() for i in range(bs)]
-        num_bgs = (bg_mask).sum(1)  # [B]
-        bg_start_idx = [num_bgs[:i].sum().item() for i in range(bs)]
-        bg_end_idx = [num_bgs[:i + 1].sum().item() for i in range(bs)]
-
-        # Multiple rounds of attention.
-        for _ in range(self.num_iterations):
-            fg_slots_prev = fg_slots
-            bg_slots_prev = bg_slots
-
-            # Attention.
-            fg_q = self.project_q(fg_slots)
-            bg_q = self.bg_project_q(bg_slots)
-
-            logits = torch.empty((bs, self.num_slots, num_inputs)).type_as(k)
-            k_trans = k.transpose(2, 1).contiguous()
-            for i in range(bs):
-                one_fg_q = fg_q[fg_start_idx[i]:fg_end_idx[i]].unsqueeze(0)
-                fg_logits = torch.matmul(one_fg_q, k_trans[i:i + 1])
-                one_bg_q = bg_q[bg_start_idx[i]:bg_end_idx[i]].unsqueeze(0)
-                bg_logits = torch.matmul(one_bg_q, k_trans[i:i + 1])
-                logits[i:i + 1] = torch.cat([fg_logits, bg_logits], dim=1)
-
-            attn = F.softmax(logits, dim=-1) + self.epsilon
-            # `attn` has shape: [batch_size, num_slots, num_inputs].
-
-            # Weighted mean.
-            attn = attn / attn.sum(dim=-1, keepdim=True)
-            fg_attn, bg_attn = attn[fg_mask], attn[bg_mask]
-            updates = torch.empty(
-                (bs, self.num_slots, self.slot_size)).type_as(attn)
-            for i in range(bs):
-                one_fg_attn = fg_attn[fg_start_idx[i]:fg_end_idx[i]]
-                fg_updates = torch.matmul(one_fg_attn.unsqueeze(0), v[i:i + 1])
-                one_bg_attn = bg_attn[bg_start_idx[i]:bg_end_idx[i]]
-                bg_updates = torch.matmul(one_bg_attn.unsqueeze(0), v[i:i + 1])
-                updates[i:i + 1] = torch.cat([fg_updates, bg_updates], dim=1)
-            # `updates` has shape: [batch_size, num_slots, slot_size].
-
-            # Slot update.
-            # GRU is expecting inputs of size (N,H)
-            # so flatten batch and slots dimension
-            fg_slots = self.gru(updates[fg_mask], fg_slots_prev)
-            fg_slots = fg_slots + self.mlp(fg_slots)
-
-            bg_slots = self.gru(updates[bg_mask], bg_slots_prev)
-            bg_slots = bg_slots + self.mlp(bg_slots)
-
-        slots = torch.empty((bs, self.num_slots, self.slot_size)).type_as(k)
-        slots[fg_mask] = fg_slots
-        slots[bg_mask] = bg_slots
-        return slots
 
 
 class SemPosBgSepSlotAttention(BgSepSlotAttention):
@@ -275,7 +189,7 @@ class SemPosBgSepSlotAttention(BgSepSlotAttention):
                           dim=-1)
         return slots[:, :-1], slots[:, -1:]
 
-    def forward(self, inputs, slots_mu, slots_log_sigma=None, fg_mask=None):
+    def forward(self, inputs, slots_mu, slots_log_sigma=None):
         # [B, num_slots, C]
         slots = super().forward(inputs, slots_mu, slots_log_sigma)
         slot_size = int(self.slot_size / (1 + self.pos_ratio))
@@ -307,10 +221,10 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64),
         dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
         dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224,
-        use_entropy_loss: bool = False,
         use_bg_sep_slot: bool = False,
         enc_resolution: Tuple[int, int] = (7, 7),  # output res of encoder
         visual_feats_channels: int = 512,
+        use_entropy_loss: bool = False,
     ):
         if use_unet:
             assert not use_clip_vision
@@ -331,12 +245,12 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             enc_channels=enc_channels,
             dec_channels=dec_channels,
             dec_resolution=dec_resolution,
-            use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot,
             enc_resolution=enc_resolution,
             visual_feats_channels=visual_feats_channels,
             use_word_set=False,
             use_padding_mask=False,
+            use_entropy_loss=use_entropy_loss,
         )
 
     def _build_slot_attention(self):
@@ -367,38 +281,22 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         else:
             super()._build_encoder()
 
-    def _get_slot_embedding(self, tokens, paddings):
+    def _get_slot_embedding(self, tokens):
         """Encode text, generate slot embeddings.
 
         Args:
             tokens: [B, N, C]
-            padding: [B, N]
         """
         if not self.use_clip_text:
             # not generating slots
-            return None, None
+            return None, None, None
         # we treat each obj as batch dim and get global text (for each phrase)
-        obj_mask = (paddings == 1)
-        obj_tokens = tokens[obj_mask]  # [K, C]
         text_features = self.clip_model.encode_text(
-            obj_tokens, lin_proj=False, per_token_emb=False,
+            tokens, lin_proj=False, per_token_emb=False,
             return_mask=False)  # [K, C]
         text_features = text_features.type(self.dtype)
-        slots = self.text2slot_model(text_features, obj_mask)
-        return slots, obj_mask
-
-    def encode(self, x):
-        """Encode from img to slots."""
-        img, text, padding = x['img'], x['text'], x['padding']
-        encoder_out = self._get_encoder_out(img)  # transformed vision feature
-        # `encoder_out` has shape: [batch_size, height*width, filter_size]
-
-        # slot initialization
-        slot_mu, obj_mask = self._get_slot_embedding(text, padding)
-
-        # (batch_size, self.num_slots, self.slot_size)
-        slots = self.slot_attention(encoder_out, slot_mu, fg_mask=obj_mask)
-        return slots
+        slots, _ = self.text2slot_model(text_features)
+        return slots, _, text_features
 
 
 class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
@@ -422,10 +320,10 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64),
         dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
         dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224
-        use_entropy_loss: bool = False,
         use_bg_sep_slot: bool = False,
         enc_resolution: Tuple[int, int] = (7, 7),  # output res of encoder
         visual_feats_channels: int = 512,
+        use_entropy_loss: bool = False,
     ):
         self.enc_pos_size = enc_pos_size
         self.dec_pos_size = dec_pos_size
@@ -446,16 +344,17 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
             enc_channels=enc_channels,
             dec_channels=dec_channels,
             dec_resolution=dec_resolution,
-            use_entropy_loss=use_entropy_loss,
             use_bg_sep_slot=use_bg_sep_slot,
             enc_resolution=enc_resolution,
             visual_feats_channels=visual_feats_channels,
+            use_entropy_loss=use_entropy_loss,
         )
 
         # Build Encoder related modules
         self.pos_ratio = enc_pos_size / slot_size
         self.encoder_pos_embedding = ConcatSoftPositionEmbed(
-            3, int(self.visual_feats_channels * self.pos_ratio), self.enc_resolution)
+            3, int(self.visual_feats_channels * self.pos_ratio),
+            self.enc_resolution)
         del self.encoder_out_layer  # no mixing pos and sem
 
     def _build_slot_attention(self):
@@ -489,46 +388,36 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
             encoder_out = encoder_out.type(self.dtype)
         else:
             encoder_out = self.encoder(img)
+        img_feats = encoder_out  # Conv features without pos_enc
         encoder_out = self.encoder_pos_embedding(encoder_out).\
             permute(0, 2, 3, 1).flatten(1, 2)
-        return encoder_out  # [B, H*W, C]
+        return encoder_out, img_feats  # [B, H*W, C]
 
     def encode(self, x):
         """Encode from img to slots."""
-        img, text, padding = x['img'], x['text'], x['padding']
-        encoder_out = self._get_encoder_out(img)  # transformed vision feature
+        img, text = x['img'], x['text']
+        encoder_out, img_feats = self._get_encoder_out(img)
         # `encoder_out` has shape: [batch_size, height*width, filter_size]
 
         # slot initialization
-        slot_mu, obj_mask = self._get_slot_embedding(text, padding)
+        slot_mu, _, text_feats = self._get_slot_embedding(text)
 
         # (batch_size, self.num_slots, self.slot_size)
-        slots, sem_slots, pos_slots = self.slot_attention(
-            encoder_out, slot_mu, fg_mask=obj_mask)
-        return slots, sem_slots, pos_slots
+        slots, sem_slots, pos_slots = self.slot_attention(encoder_out, slot_mu)
+        return slots, sem_slots, pos_slots, img_feats, text_feats
 
     def forward(self, x):
         torch.cuda.empty_cache()
 
-        slots, sem_slots, pos_slots = self.encode(x)
+        slots, sem_slots, pos_slots, img_feats, text_feats = self.encode(x)
 
         recon_combined, recons, masks, slots = self.decode(
             slots, x['img'].shape)
 
-        return recon_combined, recons, masks, (slots, sem_slots, pos_slots)
-
-    def loss_function(self, input):
-        recon_combined, recons, masks, slots = self.forward(input)
-        loss = F.mse_loss(recon_combined, input['img'])
-        loss_dict = {
-            "recon_loss": loss,
-        }
-        # masks: [B, num_slots, 1, H, W], apply entropy loss
-        if self.use_entropy_loss:
-            masks = masks[:, :, 0]  # [B, num_slots, H, W]
-            entropy_loss = (-masks * torch.log(masks + 1e-6)).sum(1).mean()
-            loss_dict['entropy'] = entropy_loss
-        return loss_dict
+        if not self.training:
+            return recon_combined, recons, masks, slots
+        return recon_combined, recons, masks, (slots, sem_slots, pos_slots), \
+            img_feats, text_feats
 
 
 class ConcatSoftPositionEmbed(SoftPositionEmbed):
