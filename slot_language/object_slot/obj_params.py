@@ -27,7 +27,7 @@ class SlotAttentionParams:
 
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
-    entropy_loss_w: float = 1.0
+    entropy_loss_w: float = 1e-3
 
     # setting about sem-pos separate model
     use_sempos_sep: bool = False
@@ -46,7 +46,7 @@ class SlotAttentionParams:
     text2slot_arch: str = 'MLP'  # or 'Transformer' or 'DETR'
     # for MLP
     text2slot_hidden_sizes: Tuple[int] = (512, )
-    normalize_slots: bool = False
+    normalize_slots: bool = True
 
     # data
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video_4obj"

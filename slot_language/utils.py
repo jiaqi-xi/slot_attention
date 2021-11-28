@@ -1,12 +1,12 @@
 import cv2
 import numpy as np
-from PIL import Image
 from typing import Any
 from typing import Tuple
 from typing import TypeVar
 from typing import Union
 
 import torch
+import torch.nn as nn
 from pytorch_lightning import Callback
 
 import wandb
@@ -148,3 +148,27 @@ def save_video(video, save_path, fps=30, codec='mp4v'):
     for i in range(video.shape[0]):
         out.write(video[i])
     out.release()
+
+
+def fc_bn_relu(in_dim, out_dim, use_bn):
+    if use_bn:
+        return nn.Sequential(
+            nn.Linear(in_dim, out_dim, bias=False),
+            nn.BatchNorm1d(out_dim),
+            nn.ReLU(),
+        )
+    return nn.Sequential(
+        nn.Linear(in_dim, out_dim, bias=True),
+        nn.ReLU(),
+    )
+
+
+def build_mlps(in_channels, hidden_sizes, out_channels, use_bn):
+    if hidden_sizes is None or len(hidden_sizes) == 0:
+        return nn.Linear(in_channels, out_channels)
+    modules = [fc_bn_relu(in_channels, hidden_sizes[0], use_bn=use_bn)]
+    for i in range(0, len(hidden_sizes) - 1):
+        modules.append(
+            fc_bn_relu(hidden_sizes[i], hidden_sizes[i + 1], use_bn=use_bn))
+    modules.append(nn.Linear(hidden_sizes[-1], out_channels))
+    return nn.Sequential(*modules)

@@ -32,7 +32,11 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     model = SlotAttentionMethod(
         model=model, datamodule=clevr_datamodule, params=params)
-    model.load_state_dict(torch.load(args.weight)['state_dict'], strict=True)
+    ckp = torch.load(args.weight)['state_dict']
+    # aug_params trained models are 'model.model.xxx'
+    if 'aug_params' in args.weight:
+        ckp = {k[6:]: v for k, v in ckp.items() if 'model.model.' in k}
+    model.load_state_dict(ckp, strict=True)
     model = model.cuda().eval()
 
     save_folder = os.path.join(os.path.dirname(args.weight), 'vis')

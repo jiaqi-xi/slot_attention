@@ -123,7 +123,7 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
     def validation_epoch_end(self, outputs):
         avg_recon_loss = torch.stack([x['recon_loss'] for x in outputs]).mean()
         logs = {
-            'val_loss': avg_recon_loss,
+            'val_recon_loss': avg_recon_loss,
         }
         self.log_dict(logs, sync_dist=True)
         print("; ".join([f"{k}: {v.item():.6f}" for k, v in logs.items()]))

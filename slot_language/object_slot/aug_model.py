@@ -1,9 +1,11 @@
+from typing import Tuple
 import torch
 from torch import nn
 from torch.nn import functional as F
 import torchvision.transforms.functional as TF
 
-from obj_model import ObjSlotAttentionModel, SemPosSepObjSlotAttentionModel
+from obj_model import ObjSlotAttentionModel
+from obj_utils import build_mlps
 
 
 class ObjAugSlotAttentionModel(nn.Module):
@@ -12,20 +14,35 @@ class ObjAugSlotAttentionModel(nn.Module):
                  model: ObjSlotAttentionModel,
                  eps: float = 1e-6,
                  use_contrastive_loss: bool = False,
-                 contrastive_T: float = 0.1):
+                 contrastive_T: float = 0.1,
+                 use_text_recon_loss: bool = False,
+                 text_recon_mlp: Tuple[int] = (64, ),
+                 text_recon_normalize: bool = False):
         super().__init__()
 
         self.model = model
         self.eps = eps
+
+        # contrastive loss
         self.use_contrastive_loss = use_contrastive_loss
         self.contrastive_T = contrastive_T
-
-        # index used for contrastive loss computation
         self.num_slots = self.model.num_slots
-        neg_idx = [list(range(2 * self.num_slots))] * (2 * self.num_slots)
-        for idx in range(2 * self.num_slots):
-            neg_idx[idx].remove(idx)
-        self.register_buffer('neg_idx', torch.tensor(neg_idx).long())
+        # index used for contrastive loss computation
+        if use_contrastive_loss:
+            sample_num = 2 * self.num_slots
+            neg_idx = [list(range(sample_num)) for _ in range(sample_num)]
+            for idx in range(sample_num):
+                neg_idx[idx].remove(idx)
+            self.register_buffer('neg_idx', torch.tensor(neg_idx).long())
+
+        # text reconstruction loss
+        self.use_text_recon_loss = use_text_recon_loss
+        self.text_recon_normalize = text_recon_normalize
+        self.slot_size = self.model.slot_size
+        self.text_feats_size = self.model.text2slot_model.in_channels
+        if use_text_recon_loss:
+            self.text_recon_mlp = build_mlps(self.slot_size, text_recon_mlp,
+                                             self.text_feats_size, False)
 
     def forward_test(self, data):
         return self.model(dict(img=data['img'], text=data['text']))
@@ -82,6 +99,9 @@ class ObjAugSlotAttentionModel(nn.Module):
         if self.use_contrastive_loss:
             loss_dict['contrastive_loss'] = self.calc_contrastive_loss(
                 slots, is_shuffled, shuffled_idx)
+        if self.use_text_recon_loss:
+            loss_dict['text_recon_loss'] = self.calc_text_recon_loss(
+                slots, text_feats)
         return loss_dict
 
     def calc_equivariance_loss(self, masks, is_flipped, is_shuffled,
@@ -129,19 +149,16 @@ class ObjAugSlotAttentionModel(nn.Module):
         contrastive_loss = F.cross_entropy(logits, labels)
         return contrastive_loss
 
+    def calc_text_recon_loss(self, slots, text_feats):
+        """Reconstruction loss from slot embedding to text features."""
+        if self.text_recon_normalize:
+            text_feats = F.normalize(text_feats, p=2, dim=-1)
+        pred_text_feats = self.text_recon_mlp(slots)  # [2*B, num_slots, C]
+        text_recon_loss = F.mse_loss(pred_text_feats, text_feats)
+        return text_recon_loss
+
 
 class SemPosSepObjAugSlotAttentionModel(ObjAugSlotAttentionModel):
-
-    def __init__(self,
-                 model: SemPosSepObjSlotAttentionModel,
-                 eps: float = 1e-6,
-                 use_contrastive_loss: bool = False,
-                 contrastive_T: float = 0.1):
-        super().__init__(
-            model,
-            eps=eps,
-            use_contrastive_loss=use_contrastive_loss,
-            contrastive_T=contrastive_T)
 
     def loss_function(self, input):
         """Calculate loss.
@@ -172,4 +189,7 @@ class SemPosSepObjAugSlotAttentionModel(ObjAugSlotAttentionModel):
             slots, sem_slots, pos_slots = slots
             loss_dict['contrastive_loss'] = self.calc_contrastive_loss(
                 sem_slots, is_shuffled, shuffled_idx)
+        if self.use_text_recon_loss:
+            loss_dict['text_recon_loss'] = self.calc_text_recon_loss(
+                sem_slots, text_feats)
         return loss_dict

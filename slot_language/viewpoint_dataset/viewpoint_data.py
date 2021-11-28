@@ -67,7 +67,10 @@ class CLEVRVisionLanguageViewpointDataset(Dataset):
 
         self.num_videos = len(self.files)
         self.clip_len = clip_len
-        self.base_num = self.clip_len  # for video/frame_idx calculation
+        if self.split == 'train':
+            self.base_num = clip_len
+        else:
+            self.base_num = 1
         self.is_video = is_video
 
         # pattern for text generation

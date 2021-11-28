@@ -1,4 +1,9 @@
+import torch
+
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 import os
+import sys
 import importlib
 import argparse
 import numpy as np
@@ -12,7 +17,7 @@ from obj_train import build_slot_attention_model, build_data_transforms, \
     process_ckp, VideoLogCallback, ImageLogCallback
 from obj_data import ObjAugCLEVRVisionLanguageCLIPDataModule
 from aug_method import ObjAugSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from aug_model import ObjAugSlotAttentionModel
+from aug_model import ObjAugSlotAttentionModel, SemPosSepObjAugSlotAttentionModel
 from aug_params import SlotAttentionParams
 
 sys.path.append('../viewpoint_dataset/')
@@ -46,10 +51,18 @@ def build_data_module(params: SlotAttentionParams):
 
 def build_aug_slot_attention_model(params: SlotAttentionParams):
     model = build_slot_attention_model(params)
-    model = ObjAugSlotAttentionModel(
+    model_ = SemPosSepObjAugSlotAttentionModel if \
+        params.use_sempos_sep else ObjAugSlotAttentionModel
+    model = model_(
         model=model,
         use_contrastive_loss=params.use_contrastive_loss,
-        contrastive_T=params.contrastive_T)
+        contrastive_T=params.contrastive_T,
+        use_text_recon_loss=params.use_text_recon_loss if hasattr(
+            params, 'use_text_recon_loss') else False,
+        text_recon_mlp=params.text_recon_mlp if hasattr(
+            params, 'text_recon_mlp') else (),
+        text_recon_normalize=params.text_recon_normalize if hasattr(
+            params, 'text_recon_normalize') else False)
     return model
 
 

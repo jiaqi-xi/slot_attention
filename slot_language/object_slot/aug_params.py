@@ -7,7 +7,8 @@ import attr
 @attr.s(auto_attribs=True)
 class SlotAttentionParams:
     # model configs
-    resolution: Tuple[int, int] = (128, 128)  # since we not using ViT
+    # TODO: let's start with small img size!
+    resolution: Tuple[int, int] = (64, 64)  # since we not using ViT
     num_slots: int = 7  # at most 6 obj per image/video
     # dim of slots embedding
     slot_size: int = 64
@@ -27,7 +28,7 @@ class SlotAttentionParams:
 
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
-    entropy_loss_w: float = 1.0
+    entropy_loss_w: float = 1e-3
 
     # setting about sem-pos separate model
     use_sempos_sep: bool = False
@@ -36,11 +37,19 @@ class SlotAttentionParams:
 
     # transformation equivariance loss
     flip_img: bool = True
+    shuffle_obj: bool = False
     equivariance_loss_w: float = 1.0
 
     # contrastive loss on slot embedding
-    use_contrastive_loss: bool = False
+    use_contrastive_loss: bool = True
     contrastive_T: float = 1.0
+    contrastive_loss_w: float = 0.1
+
+    # text reconstruction loss on slot embedding
+    use_text_recon_loss: bool = False
+    text_recon_mlp: Tuple[int] = ()
+    text_recon_normalize: bool = False
+    text_recon_loss_w: float = 1.0
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
@@ -54,21 +63,20 @@ class SlotAttentionParams:
     text2slot_arch: str = 'MLP'  # or 'Transformer' or 'DETR'
     # for MLP
     text2slot_hidden_sizes: Tuple[int] = (512, )
-    normalize_slots: bool = False
+    normalize_slots: bool = True
 
     # data
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video_4obj"
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
-    shuffle_obj: bool = False
     pad_text: str = 'background'
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
 
     # training settings
-    gpus: int = 4
-    batch_size: int = 64 * 4
-    val_batch_size: int = 64 * 4
+    gpus: int = 1
+    batch_size: int = 64
+    val_batch_size: int = 64
     max_epochs: int = 16
     num_sanity_val_steps: int = 1
     num_train_images: Optional[int] = None
@@ -80,7 +88,7 @@ class SlotAttentionParams:
 
     # optimization settings
     cosine_decay: bool = True
-    lr: float = 0.0008
+    lr: float = 0.0002
     warmup_steps_pct: float = 0.025
     decay_steps_pct: float = 0.2
     scheduler_gamma: float = 0.5
