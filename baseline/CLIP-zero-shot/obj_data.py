@@ -7,8 +7,6 @@ from typing import Callable, Tuple
 from typing import Optional
 import torch
 
-sys.path.append('../../slot_language')
-
 from data import CLEVRVisionLanguageCLIPDataset, CLEVRVisionLanguageCLIPDataModule
 
 
