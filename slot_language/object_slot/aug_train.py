@@ -56,13 +56,14 @@ def build_aug_slot_attention_model(params: SlotAttentionParams):
     model = model_(
         model=model,
         use_contrastive_loss=params.use_contrastive_loss,
+        contrastive_mlp=params.contrastive_mlp,
         contrastive_T=params.contrastive_T,
-        use_text_recon_loss=params.use_text_recon_loss if hasattr(
-            params, 'use_text_recon_loss') else False,
-        text_recon_mlp=params.text_recon_mlp if hasattr(
-            params, 'text_recon_mlp') else (),
-        text_recon_normalize=params.text_recon_normalize if hasattr(
-            params, 'text_recon_normalize') else False)
+        contrastive_normalize=params.contrastive_normalize,
+        contrastive_stop_grad=params.contrastive_stop_grad,
+        use_text_recon_loss=params.use_text_recon_loss,
+        text_recon_mlp=params.text_recon_mlp,
+        text_recon_normalize=params.text_recon_normalize,
+        use_feature_loss=params.use_feature_loss)
     return model
 
 
