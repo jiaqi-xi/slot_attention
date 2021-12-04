@@ -55,6 +55,7 @@ class SlotAttentionParams:
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
+    center_crop: Tuple[int] = None  # (128, 128)
     # whether load different text for different video period
     fine_grained: bool = True
     # whether text is complete action or just object names

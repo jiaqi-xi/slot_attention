@@ -80,6 +80,7 @@ class SlotAttentionParams:
     prompt: str = 'a {color} {shape}'
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
+    center_crop: Tuple[int] = None  # (128, 128)
 
     # training settings
     gpus: int = 1
