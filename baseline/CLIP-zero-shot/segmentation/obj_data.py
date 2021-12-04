@@ -12,34 +12,6 @@ import pytorch_lightning as pl
 import clip
 
 
-def simple_rescale(x):
-    return x * 2. - 1.
-
-
-def build_data_transforms(params):
-    _, clip_transforms = clip.load(params.clip_arch)
-    if not params.use_clip_vision:
-        from torchvision.transforms import Compose, Resize, ToTensor, \
-            Normalize, Lambda
-        from torchvision.transforms import InterpolationMode
-        BICUBIC = InterpolationMode.BICUBIC
-
-        def _convert_image_to_rgb(image):
-            return image.convert("RGB")
-
-        normalize = Lambda(
-            simple_rescale) if params.simple_normalize else Normalize(
-                (0.48145466, 0.4578275, 0.40821073),
-                (0.26862954, 0.26130258, 0.27577711))
-        clip_transforms = Compose([
-            Resize(params.resolution, interpolation=BICUBIC),
-            _convert_image_to_rgb,
-            ToTensor(),
-            normalize,
-        ])
-    return clip_transforms
-
-
 class CLEVRVisionLanguageCLIPDataset(Dataset):
     """Dataset that loads one random frame from CLEVR video.
     Also build one sentence (language) describing the video.
@@ -304,83 +276,6 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         return self.num_videos * self.base_num
 
 
-class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
-
-    def __init__(
-            self,
-            data_root: str,
-            train_batch_size: int,
-            val_batch_size: int,
-            clip_transforms: Callable,
-            num_workers: int,
-            max_n_objects: int = 6,
-            num_train_images: Optional[int] = None,
-            num_val_images: Optional[int] = None,
-            fine_grained: bool = True,
-            object_only: bool = False,
-            separater: str = ', ',
-            overfit: int = -1,  # overfit to one training example
-    ):
-        super().__init__()
-        self.data_root = data_root
-        self.train_batch_size = train_batch_size
-        self.val_batch_size = val_batch_size
-        self.clip_transforms = clip_transforms
-        self.max_n_objects = max_n_objects
-        self.num_workers = num_workers
-        self.num_train_images = num_train_images
-        self.num_val_images = num_val_images
-        self.object_only = object_only
-        self.fine_grained = fine_grained
-        self.separater = separater
-        self.overfit = overfit
-
-        train_split = 'val' if self.overfit > 0 else 'train'
-        self.train_dataset = CLEVRVisionLanguageCLIPDataset(
-            data_root=self.data_root,
-            max_num_images=self.num_train_images,
-            clip_transforms=self.clip_transforms,
-            split=train_split,
-            max_n_objects=self.max_n_objects,
-            fine_grained=self.fine_grained,
-            object_only=self.object_only,
-            separater=self.separater,
-            overfit=self.overfit,
-            repeat=(self.overfit > 0),
-        )
-        self.val_dataset = CLEVRVisionLanguageCLIPDataset(
-            data_root=self.data_root,
-            max_num_images=self.num_val_images,
-            clip_transforms=self.clip_transforms,
-            split='val',
-            max_n_objects=self.max_n_objects,
-            fine_grained=self.fine_grained,
-            object_only=self.object_only,
-            separater=self.separater,
-            overfit=self.overfit,
-            repeat=False,
-        )
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.train_batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            pin_memory=True,
-            drop_last=True,
-        )
-
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.val_batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=True,
-        )
-
-
 class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
     """Dataset that loads one random frame from CLEVR video.
     One text ('color-shape' of an object) directly for one slot!
@@ -394,6 +289,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         max_n_objects: int = 6,
         split: str = "train",
         clip_len: int = 34,
+        prompt: str = 'a {color} {shape}',
         is_video: bool = False,
         shuffle_obj: bool = False,
         pad_text: str = 'background',
@@ -402,6 +298,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         super().__init__(data_root, max_num_images, clip_transforms,
                          max_n_objects, split, clip_len, is_video, True, True)
         assert pad_text  # shouldn't be ''
+        self.prompt = prompt
         self.shuffle_obj = shuffle_obj
         self.pad_text = pad_text
         self.text_num = 1 + self.max_n_objects
@@ -443,7 +340,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         colors = [obj['color'] for obj in anno['objects']]
         shapes = [obj['shape'] for obj in anno['objects']]
         texts = [
-            'a {} {}'.format(color, shape)
+            self.prompt.format(color=color, shape=shape)
             for color, shape in zip(colors, shapes)
         ]
         # pad with some special texts, e.g. 'background'
@@ -454,41 +351,3 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
             return texts, obj_mask
         texts.append(self.pad_text)
         return texts
-
-
-class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
-
-    def __init__(
-        self,
-        data_root: str,
-        train_batch_size: int,
-        val_batch_size: int,
-        clip_transforms: Callable,
-        num_workers: int,
-        max_n_objects: int = 6,
-        shuffle_obj: bool = False,
-        pad_text: str = 'background',
-    ):
-        super().__init__(data_root, train_batch_size, val_batch_size,
-                         clip_transforms, num_workers, max_n_objects)
-
-        self.shuffle_obj = shuffle_obj
-        self.pad_text = pad_text
-        self.train_dataset = ObjCLEVRVisionLanguageCLIPDataset(
-            data_root=self.data_root,
-            max_num_images=self.num_train_images,
-            clip_transforms=self.clip_transforms,
-            max_n_objects=self.max_n_objects,
-            split='train',
-            shuffle_obj=self.shuffle_obj,
-            pad_text=self.pad_text,
-        )
-        self.val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
-            data_root=self.data_root,
-            max_num_images=self.num_val_images,
-            clip_transforms=self.clip_transforms,
-            max_n_objects=self.max_n_objects,
-            split='val',
-            shuffle_obj=self.shuffle_obj,
-            pad_text=self.pad_text,
-        )

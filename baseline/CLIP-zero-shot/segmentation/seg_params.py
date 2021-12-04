@@ -4,20 +4,20 @@ import attr
 @attr.s(auto_attribs=True)
 class SegParams:
     # architecture of CLIP pre-trained model
-    clip_arch: str = 'ViT-B/32'
+    clip_arch: str = 'ViT-B/16'
 
     # data
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video_4obj"
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     max_n_objects: int = 6
-    # Normalization for natural img or original slot attention one
-    simple_normalize: bool = False
 
     # training settings
     batch_size: int = 64
     num_workers: int = 6
     num_test: int = 8
+    prompt: str = 'a photo of {color} {shape}'
+    pad_text: str = 'empty'
 
     # for segmentation mask visualization
     PALETTE = [[0, 255, 0], [0, 0, 255], [0, 255, 255], [255, 255, 0],
