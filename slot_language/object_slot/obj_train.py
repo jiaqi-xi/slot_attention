@@ -43,6 +43,7 @@ def build_data_module(params: SlotAttentionParams):
         clip_transforms=clip_transforms,
         num_workers=params.num_workers,
         max_n_objects=params.num_slots - 1,
+        prompt=params.prompt,
         shuffle_obj=params.shuffle_obj,
         pad_text=params.pad_text,
     )

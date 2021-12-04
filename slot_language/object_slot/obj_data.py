@@ -29,6 +29,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         max_n_objects: int = 6,
         split: str = "train",
         clip_len: int = 34,
+        prompt: str = 'a {color} {shape}',
         is_video: bool = False,
         shuffle_obj: bool = False,
         pad_text: str = 'background',
@@ -37,6 +38,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         super().__init__(data_root, max_num_images, clip_transforms,
                          max_n_objects, split, clip_len, is_video, True, True)
         assert pad_text  # shouldn't be ''
+        self.prompt = prompt
         self.shuffle_obj = shuffle_obj
         self.pad_text = pad_text
         self.text_num = 1 + self.max_n_objects
@@ -73,7 +75,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         colors = [obj['color'] for obj in anno['objects']]
         shapes = [obj['shape'] for obj in anno['objects']]
         texts = [
-            'a {} {}'.format(color, shape)
+            self.prompt.format(color=color, shape=shape)
             for color, shape in zip(colors, shapes)
         ]
         # pad with some special texts, e.g. 'background'
@@ -94,12 +96,14 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
         clip_transforms: Callable,
         num_workers: int,
         max_n_objects: int = 6,
+        prompt: str = 'a {color} {shape}',
         shuffle_obj: bool = False,
         pad_text: str = 'background',
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
                          clip_transforms, num_workers, max_n_objects)
 
+        self.prompt = prompt
         self.shuffle_obj = shuffle_obj
         self.pad_text = pad_text
         self.train_dataset = ObjCLEVRVisionLanguageCLIPDataset(
@@ -108,6 +112,7 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='train',
+            prompt=self.prompt,
             shuffle_obj=self.shuffle_obj,
             pad_text=self.pad_text,
         )
@@ -117,6 +122,7 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='val',
+            prompt=self.prompt,
             shuffle_obj=self.shuffle_obj,
             pad_text=self.pad_text,
         )
@@ -136,6 +142,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
             max_n_objects: int = 6,
             split: str = "train",
             clip_len: int = 34,
+            prompt: str = 'a {color} {shape}',
             is_video: bool = False,
             shuffle_obj: bool = False,
             pad_text: str = 'background',
@@ -143,8 +150,8 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
     ):
         # TODO: we assume `self.max_n_objects` == 6 here!
         super().__init__(data_root, max_num_images, clip_transforms,
-                         max_n_objects, split, clip_len, is_video, shuffle_obj,
-                         pad_text)
+                         max_n_objects, split, clip_len, prompt, is_video,
+                         shuffle_obj, pad_text)
         self.sample_clip_num = sample_clip_num
         if self.split == 'train':
             self.base_num = self.clip_len - (self.sample_clip_num - 1)
@@ -201,12 +208,13 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
         clip_transforms: Callable,
         num_workers: int,
         max_n_objects: int = 6,
+        prompt: str = 'a {color} {shape}',
         shuffle_obj: bool = False,
         pad_text: str = 'background',
         sample_clip_num: int = 2,
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
-                         clip_transforms, num_workers, max_n_objects,
+                         clip_transforms, num_workers, max_n_objects, prompt,
                          shuffle_obj, pad_text)
 
         self.sample_clip_num = sample_clip_num
@@ -216,6 +224,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='train',
+            prompt=self.prompt,
             shuffle_obj=self.shuffle_obj,
             pad_text=self.pad_text,
             sample_clip_num=self.sample_clip_num,
@@ -226,6 +235,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='val',
+            prompt=self.prompt,
             shuffle_obj=self.shuffle_obj,
             pad_text=self.pad_text,
             sample_clip_num=self.sample_clip_num,
@@ -245,13 +255,14 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
                  max_n_objects: int = 6,
                  split: str = "train",
                  clip_len: int = 34,
+                 prompt: str = 'a {color} {shape}',
                  is_video: bool = False,
                  shuffle_obj: bool = False,
                  pad_text: str = 'background',
                  flip_img: bool = False):
         super().__init__(data_root, max_num_images, clip_transforms,
-                         max_n_objects, split, clip_len, is_video, shuffle_obj,
-                         pad_text)
+                         max_n_objects, split, clip_len, prompt, is_video,
+                         shuffle_obj, pad_text)
         self.flip_img = flip_img
 
     def __getitem__(self, index: int):
@@ -294,7 +305,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
         colors = [obj['color'] for obj in anno['objects']]
         shapes = [obj['shape'] for obj in anno['objects']]
         texts = [
-            'a {} {}'.format(color, shape)
+            self.prompt.format(color=color, shape=shape)
             for color, shape in zip(colors, shapes)
         ]
         # pad with some special texts, e.g. 'background'
@@ -322,12 +333,13 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
         clip_transforms: Callable,
         num_workers: int,
         max_n_objects: int = 6,
+        prompt: str = 'a {color} {shape}',
         shuffle_obj: bool = False,
         pad_text: str = 'background',
         flip_img: bool = False,
     ):
         super().__init__(data_root, train_batch_size, val_batch_size,
-                         clip_transforms, num_workers, max_n_objects,
+                         clip_transforms, num_workers, max_n_objects, prompt,
                          shuffle_obj, pad_text)
 
         self.flip_img = flip_img
@@ -337,6 +349,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='train',
+            prompt=self.prompt,
             shuffle_obj=self.shuffle_obj,
             pad_text=self.pad_text,
             flip_img=self.flip_img,
@@ -347,6 +360,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
             clip_transforms=self.clip_transforms,
             max_n_objects=self.max_n_objects,
             split='val',
+            prompt=self.prompt,
             shuffle_obj=self.shuffle_obj,
             pad_text=self.pad_text,
             flip_img=self.flip_img,

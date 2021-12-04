@@ -53,6 +53,7 @@ class SlotAttentionParams:
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     shuffle_obj: bool = False
+    prompt: str = 'a {color} {shape}'
     pad_text: str = 'background'
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
