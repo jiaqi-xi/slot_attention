@@ -1,7 +1,3 @@
-import os
-import sys
-import importlib
-import argparse
 import cv2
 import numpy as np
 from typing import Optional
@@ -9,19 +5,14 @@ from itertools import chain, combinations
 
 import clip
 import torch
-from torchvision.transforms import Resize
 from torchvision.ops import nms
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 from tqdm import tqdm
 from matplotlib import pyplot as plt
 from PIL import Image
 
-from obj_data import ObjCLEVRVisionLanguageCLIPDataset
+from obj_data import ObjCLEVRVisionLanguageCLIPDataset, build_data_transforms
 from sliding_params import SlidingParams
-
-sys.path.append('../../slot_language/')
-
-from train import build_data_transforms
 
 
 class AnchorImageDataset(Dataset):
@@ -79,7 +70,14 @@ class CLIPDetectorV1:
         #     clip.tokenize([template.format('') for template in IMAGENET_TEMPLATES]).to(self.device)
         # )
 
-    def draw(self, img, results, label='', colour=(0, 0, 255), width=1, font_colour=(0, 0, 0), font_scale=1,
+    def draw(self,
+             img,
+             results,
+             label='',
+             colour=(0, 0, 255),
+             width=1,
+             font_colour=(0, 0, 0),
+             font_scale=1,
              font_thickness=1,
              T=0.6):
         """
@@ -96,21 +94,41 @@ class CLIPDetectorV1:
         img = np.array(img)
         R, G, B = colour
         for mask, (x1, y1, x2, y2) in zip(results['masks'], results['boxes']):
-            img[y1:y2, x1:x2, 0][mask] = ((1 - T) * img[y1:y2, x1:x2, 0][mask]).astype(np.uint8) + np.uint8(R * T)
-            img[y1:y2, x1:x2, 1][mask] = ((1 - T) * img[y1:y2, x1:x2, 1][mask]).astype(np.uint8) + np.uint8(G * T)
-            img[y1:y2, x1:x2, 2][mask] = ((1 - T) * img[y1:y2, x1:x2, 2][mask]).astype(np.uint8) + np.uint8(B * T)
+            img[y1:y2, x1:x2,
+                0][mask] = ((1 - T) * img[y1:y2, x1:x2, 0][mask]).astype(
+                    np.uint8) + np.uint8(R * T)
+            img[y1:y2, x1:x2,
+                1][mask] = ((1 - T) * img[y1:y2, x1:x2, 1][mask]).astype(
+                    np.uint8) + np.uint8(G * T)
+            img[y1:y2, x1:x2,
+                2][mask] = ((1 - T) * img[y1:y2, x1:x2, 2][mask]).astype(
+                    np.uint8) + np.uint8(B * T)
 
-        for score, (x1, y1, x2, y2) in zip(results['scores'], results['boxes']):
+        for score, (x1, y1, x2, y2) in zip(results['scores'],
+                                           results['boxes']):
             img = cv2.rectangle(img, (x1, y1), (x2, y2), colour, width)
-            img = cv2.putText(img, f'{label}:{score:.3f}', (x1 + (x2 - x1) // 10, y1 + (y2 - y1) // 5), cv2.FONT_ITALIC,
-                              font_scale, (0, 0, 0), font_thickness + 1, cv2.LINE_AA)
-            img = cv2.putText(img, f'{label}:{score:.3f}', (x1 + (x2 - x1) // 10, y1 + (y2 - y1) // 5), cv2.FONT_ITALIC,
-                              font_scale, font_colour, font_thickness, cv2.LINE_AA)
+            img = cv2.putText(img, f'{label}:{score:.3f}',
+                              (x1 + (x2 - x1) // 10, y1 + (y2 - y1) // 5),
+                              cv2.FONT_ITALIC, font_scale, (0, 0, 0),
+                              font_thickness + 1, cv2.LINE_AA)
+            img = cv2.putText(img, f'{label}:{score:.3f}',
+                              (x1 + (x2 - x1) // 10, y1 + (y2 - y1) // 5),
+                              cv2.FONT_ITALIC, font_scale, font_colour,
+                              font_thickness, cv2.LINE_AA)
         return img
 
     def detect_by_text(
-            self, texts, img, coords, anchor_features, masks=None, *,
-            tp_thr=0.0, fp_thr=-2.0, iou_thr=0.01, k=1,
+        self,
+        texts,
+        img,
+        coords,
+        anchor_features,
+        masks=None,
+        *,
+        tp_thr=0.0,
+        fp_thr=-2.0,
+        iou_thr=0.01,
+        k=1,
     ):
         """
         :param texts: list of text query
@@ -128,7 +146,8 @@ class CLIPDetectorV1:
         with torch.no_grad():
             logits = (anchor_features @ text_embeddings).reshape(-1)
             probas, indexes = torch.sort(logits, descending=True)
-            img_features = self.model.encode_image(self.transforms(img).unsqueeze(0).to(self.device)).squeeze(0)
+            img_features = self.model.encode_image(
+                self.transforms(img).unsqueeze(0).to(self.device)).squeeze(0)
             thr = (img_features @ text_embeddings).item()
 
         boxes = []
@@ -145,7 +164,8 @@ class CLIPDetectorV1:
                     thr_indexes = thr_indexes[:1]
                 else:
                     thr_indexes = []
-            for best_index, proba in zip(indexes[thr_indexes], probas[thr_indexes]):
+            for best_index, proba in zip(indexes[thr_indexes],
+                                         probas[thr_indexes]):
                 x1, y1, x2, y2 = list(coords[best_index])
                 boxes.append([x1, y1, x2, y2])
                 scores.append(proba)
@@ -154,16 +174,24 @@ class CLIPDetectorV1:
 
         if len(boxes) > 0:
             boxes = torch.tensor(boxes, dtype=torch.float32).to(self.device)
-            labels = torch.ones(boxes.shape[0], dtype=torch.float32).to(self.device)
+            labels = torch.ones(
+                boxes.shape[0], dtype=torch.float32).to(self.device)
             scores = np.array(scores)
             indexes = nms(boxes, labels, iou_thr).cpu().numpy()
             boxes = boxes[indexes].cpu().numpy()
             scores = scores[indexes]
 
-        result = {'boxes': [], 'scores': [], 'labels': [], 'masks': [], 'thr': thr}
+        result = {
+            'boxes': [],
+            'scores': [],
+            'labels': [],
+            'masks': [],
+            'thr': thr
+        }
         for (x1, y1, x2, y2), score in zip(boxes, scores):
             if masks is not None:
-                (x1, y1, x2, y2), mask = self._get_nearest_box_and_mask((x1, y1, x2, y2), coords, masks)
+                (x1, y1, x2, y2), mask = self._get_nearest_box_and_mask(
+                    (x1, y1, x2, y2), coords, masks)
                 result['masks'].append(mask)
             x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
             result['boxes'].append([x1, y1, x2, y2])
@@ -187,15 +215,21 @@ class CLIPDetectorV1:
             text_embeddings /= text_embeddings.norm()
         return text_embeddings
 
-    def get_coords_and_masks(self, pil_img, B=0.15, K_max_box_w=0.9, K_max_box_h=0.9,
-                             K_min_box_w=0.03, K_min_box_h=0.03, iou_threshold=0.9):
+    def get_coords_and_masks(self,
+                             pil_img,
+                             B=0.15,
+                             K_max_box_w=0.9,
+                             K_max_box_h=0.9,
+                             K_min_box_w=0.03,
+                             K_min_box_h=0.03,
+                             iou_threshold=0.9):
         img = pil_img.copy()
         img = np.array(img)
         img = self._c_mean_shift(img)
         img = self._split_gray_img(img, n_labels=15)
         coords, masks = self._get_mixed_boxes_and_masks(
-            img, B, K_max_box_w, K_max_box_h, K_min_box_w, K_min_box_h, iou_threshold
-        )
+            img, B, K_max_box_w, K_max_box_h, K_min_box_w, K_min_box_h,
+            iou_threshold)
         return coords, masks
 
     def get_anchor_features(self, img, coords, bs=32, quite=False):
@@ -213,7 +247,8 @@ class CLIPDetectorV1:
         anchor_features = []
         for anchor_batch in anchor_loader:
             with torch.no_grad():
-                anchor_features_ = self.model.encode_image(anchor_batch.to(self.device))
+                anchor_features_ = self.model.encode_image(
+                    anchor_batch.to(self.device))
                 anchor_features_ /= anchor_features_.norm(dim=-1, keepdim=True)
                 anchor_features.append(anchor_features_)
         return torch.vstack(anchor_features)
@@ -234,7 +269,8 @@ class CLIPDetectorV1:
             img[(img >= t1) & (img < t2)] = t1
         return img
 
-    def _get_mixed_boxes_and_masks(self, image, B, K_max_box_w, K_max_box_h, K_min_box_w, K_min_box_h, iou_threshold):
+    def _get_mixed_boxes_and_masks(self, image, B, K_max_box_w, K_max_box_h,
+                                   K_min_box_w, K_min_box_h, iou_threshold):
         img = image.copy()
         h, w = img.shape
         max_box_w, max_box_h, min_box_w, min_box_h = w * K_max_box_w, h * K_max_box_h, w * K_min_box_w, h * K_min_box_h
@@ -249,7 +285,8 @@ class CLIPDetectorV1:
         for i, comb in enumerate(combs):
             n_img = np.isin(img, np.array(comb)).astype(np.uint8) * 255
             n_img = self._clear_noise(n_img)
-            m_boxes = self._get_boxes_from_mask(n_img, max_box_w, max_box_h, min_box_w, min_box_h)
+            m_boxes = self._get_boxes_from_mask(n_img, max_box_w, max_box_h,
+                                                min_box_w, min_box_h)
             out_boxes.extend(m_boxes)
             comb_indexes.extend([i] * len(m_boxes))
 
@@ -289,16 +326,21 @@ class CLIPDetectorV1:
 
     @staticmethod
     def _get_combinations(array):
-        combs = list(chain(*map(lambda x: combinations(array, x), range(0, len(array)+1))))
+        combs = list(
+            chain(*map(lambda x: combinations(array, x),
+                       range(0,
+                             len(array) + 1))))
         return combs[1:]
 
     @staticmethod
     def _get_boxes_from_mask(mask, max_box_w, max_box_h, min_box_w, min_box_h):
         boxes = []
-        contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE,
+                                               cv2.CHAIN_APPROX_SIMPLE)
         bboxes = [cv2.boundingRect(c) for c in contours]
         for i, (x, y, w, h) in enumerate(bboxes):
-            if (w < max_box_w and h < max_box_h) and (w > min_box_w and h > min_box_h):
+            if (w < max_box_w and h < max_box_h) and (w > min_box_w
+                                                      and h > min_box_h):
                 boxes.append([x, y, x + w, y + h])
         return boxes
 
@@ -313,7 +355,9 @@ class CLIPDetectorV1:
 
     @staticmethod
     def _get_nearest_box_and_mask(box, gt_boxes, gt_masks):
-        return sorted(zip(gt_boxes, gt_masks), key=lambda x: sum([abs(x[0][i] - box[i]) for i in range(4)]))[0]
+        return sorted(
+            zip(gt_boxes, gt_masks),
+            key=lambda x: sum([abs(x[0][i] - box[i]) for i in range(4)]))[0]
 
 
 def main(params: Optional[SlidingParams] = None):
@@ -354,8 +398,7 @@ def main(params: Optional[SlidingParams] = None):
             anchor_features=anchor_features,
             img=Image.fromarray(ori_img),
             k=k,
-            iou_thr=1.0
-        )
+            iou_thr=1.0)
         img = clip_detector.draw(
             img,
             result,
@@ -366,7 +409,8 @@ def main(params: Optional[SlidingParams] = None):
             font_thickness=1,
         )
 
-    plt.figure(num=None, figsize=(128, 128), dpi=300, facecolor='w', edgecolor='k')
+    plt.figure(
+        num=None, figsize=(128, 128), dpi=300, facecolor='w', edgecolor='k')
     # plt.imshow(img)
     plt.imsave(f'res.png', img)
 

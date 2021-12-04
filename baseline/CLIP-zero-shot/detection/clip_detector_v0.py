@@ -1,28 +1,17 @@
-import os
-import sys
-import importlib
-import argparse
 import cv2
 import numpy as np
 from typing import Optional
-from itertools import chain, combinations
 
 import clip
 import torch
-from torchvision.transforms import Resize
-from torchvision.ops import nms
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 from tqdm import tqdm
 from matplotlib import pyplot as plt
-from PIL import Image, ImageDraw
+from PIL import Image
 from ensemble_boxes import weighted_boxes_fusion
 
-from obj_data import ObjCLEVRVisionLanguageCLIPDataset
+from obj_data import ObjCLEVRVisionLanguageCLIPDataset, build_data_transforms
 from sliding_params import SlidingParams
-
-sys.path.append('../../slot_language/')
-
-from train import build_data_transforms
 
 
 class AnchorImageDataset(Dataset):
@@ -94,20 +83,34 @@ def get_anchor_coords(image_w, image_h, count_w, count_h):
                 (7, 7),
                 (8, 8),
                 (9, 9),
-                (1, 2), (2, 1),
-                (2, 3), (3, 2),
-                (2, 4), (4, 2),
-                (3, 1), (1, 3),
-                (5, 4), (4, 5),
-                (4, 1), (1, 4),
-                (5, 1), (1, 5),
-                (5, 3), (3, 5),
-                (6, 4), (4, 6),
-                (5, 8), (8, 5),
-                (10, 2), (2, 10),
-                (10, 4), (4, 10),
-                (10, 6), (6, 10),
-                (10, 8), (8, 10),
+                (1, 2),
+                (2, 1),
+                (2, 3),
+                (3, 2),
+                (2, 4),
+                (4, 2),
+                (3, 1),
+                (1, 3),
+                (5, 4),
+                (4, 5),
+                (4, 1),
+                (1, 4),
+                (5, 1),
+                (1, 5),
+                (5, 3),
+                (3, 5),
+                (6, 4),
+                (4, 6),
+                (5, 8),
+                (8, 5),
+                (10, 2),
+                (2, 10),
+                (10, 4),
+                (4, 10),
+                (10, 6),
+                (6, 10),
+                (10, 8),
+                (8, 10),
             ]:
                 anc_x1 = max(anchor_xc - (anchor_w * coef_x), 0)
                 anc_x2 = min(anchor_xc + (anchor_w * coef_x), image_w)
@@ -148,12 +151,20 @@ class CLIPDetectorV0:
         anchor_features = []
         for anchor_batch in anchor_loader:
             with torch.no_grad():
-                anchor_features_ = self.model.encode_image(anchor_batch.to(self.device))
+                anchor_features_ = self.model.encode_image(
+                    anchor_batch.to(self.device))
                 anchor_features_ /= anchor_features_.norm(dim=-1, keepdim=True)
                 anchor_features.append(anchor_features_)
         return torch.vstack(anchor_features)
 
-    def draw(self, img, results, label='', colour=(0, 0, 255), width=1, font_colour=(0, 0, 0), font_scale=1,
+    def draw(self,
+             img,
+             results,
+             label='',
+             colour=(0, 0, 255),
+             width=1,
+             font_colour=(0, 0, 0),
+             font_scale=1,
              font_thickness=1,
              T=0.6):
         """
@@ -170,17 +181,30 @@ class CLIPDetectorV0:
         img = np.array(img)
         R, G, B = colour
 
-        for score, (x1, y1, x2, y2) in zip(results['scores'], results['boxes']):
+        for score, (x1, y1, x2, y2) in zip(results['scores'],
+                                           results['boxes']):
             img = cv2.rectangle(img, (x1, y1), (x2, y2), colour, width)
-            img = cv2.putText(img, f'{label}:{score:.3f}', (x1 + (x2 - x1) // 10, y1 + (y2 - y1) // 5), cv2.FONT_ITALIC,
-                              font_scale, (0, 0, 0), font_thickness + 1, cv2.LINE_AA)
-            img = cv2.putText(img, f'{label}:{score:.3f}', (x1 + (x2 - x1) // 10, y1 + (y2 - y1) // 5), cv2.FONT_ITALIC,
-                              font_scale, font_colour, font_thickness, cv2.LINE_AA)
+            img = cv2.putText(img, f'{label}:{score:.3f}',
+                              (x1 + (x2 - x1) // 10, y1 + (y2 - y1) // 5),
+                              cv2.FONT_ITALIC, font_scale, (0, 0, 0),
+                              font_thickness + 1, cv2.LINE_AA)
+            img = cv2.putText(img, f'{label}:{score:.3f}',
+                              (x1 + (x2 - x1) // 10, y1 + (y2 - y1) // 5),
+                              cv2.FONT_ITALIC, font_scale, font_colour,
+                              font_thickness, cv2.LINE_AA)
         return img
 
-    def detect_by_text(
-            self, texts, img, coords, anchor_features, *, tp_thr=0.0, fp_thr=-2.0, iou_thr=0.01, skip_box_thr=0.1, k=1
-    ):
+    def detect_by_text(self,
+                       texts,
+                       img,
+                       coords,
+                       anchor_features,
+                       *,
+                       tp_thr=0.0,
+                       fp_thr=-2.0,
+                       iou_thr=0.01,
+                       skip_box_thr=0.1,
+                       k=1):
         """
         :param texts: list of text query
         :param img: PIL of raw image
@@ -207,11 +231,13 @@ class CLIPDetectorV0:
             text_embeddings /= text_embeddings.norm()
 
             zeroshot_weights.append(text_embeddings)
-            zeroshot_weights = torch.stack(zeroshot_weights, dim=1).to(self.device)
+            zeroshot_weights = torch.stack(
+                zeroshot_weights, dim=1).to(self.device)
             logits = (anchor_features @ zeroshot_weights).reshape(-1)
             probas, indexes = torch.sort(logits, descending=True)
 
-            img_features = self.model.encode_image(self.transforms(img).unsqueeze(0).to(self.device)).squeeze(0)
+            img_features = self.model.encode_image(
+                self.transforms(img).unsqueeze(0).to(self.device)).squeeze(0)
             thr = (img_features @ zeroshot_weights)[0].item()
 
         w, h = img.size
@@ -228,9 +254,11 @@ class CLIPDetectorV0:
 
         if thr > fp_thr:
             if thr_indexes.shape[0] != 0:
-                for best_index, proba in zip(indexes[thr_indexes], probas[thr_indexes]):
+                for best_index, proba in zip(indexes[thr_indexes],
+                                             probas[thr_indexes]):
                     x1, y1, x2, y2 = list(coords[best_index])
-                    x1, y1, x2, y2 = max(x1 / w, 0.0), max(y1 / h, 0.0), min(x2 / w, 1.0), min(y2 / h, 1.0)
+                    x1, y1, x2, y2 = max(x1 / w, 0.0), max(y1 / h, 0.0), min(
+                        x2 / w, 1.0), min(y2 / h, 1.0)
                     boxes_list.append([x1, y1, x2, y2])
                     scores_list.append(proba)
                     labels_list.append(1)
@@ -238,19 +266,21 @@ class CLIPDetectorV0:
                 if thr > tp_thr:
                     best_index, proba = indexes[0], probas[0]
                     x1, y1, x2, y2 = list(coords[best_index])
-                    x1, y1, x2, y2 = max(x1 / w, 0.0), max(y1 / h, 0.0), min(x2 / w, 1.0), min(y2 / h, 1.0)
+                    x1, y1, x2, y2 = max(x1 / w, 0.0), max(y1 / h, 0.0), min(
+                        x2 / w, 1.0), min(y2 / h, 1.0)
                     boxes_list.append([x1, y1, x2, y2])
                     scores_list.append(proba)
                     labels_list.append(1)
 
         boxes, scores, labels = weighted_boxes_fusion(
             [boxes_list], [scores_list], [labels_list],
-            weights=None, iou_thr=iou_thr, skip_box_thr=skip_box_thr
-        )
+            weights=None,
+            iou_thr=iou_thr,
+            skip_box_thr=skip_box_thr)
 
         result = {'boxes': [], 'scores': [], 'labels': []}
         for (x1, y1, x2, y2), score, label in zip(boxes, scores, labels):
-            x1, y1, x2, y2 = int(x1*w), int(y1*h), int(x2*w), int(y2*h)
+            x1, y1, x2, y2 = int(x1 * w), int(y1 * h), int(x2 * w), int(y2 * h)
             result['boxes'].append([x1, y1, x2, y2])
             result['scores'].append(float(score))
             result['labels'].append(int(label))
@@ -300,8 +330,7 @@ def main(params: Optional[SlidingParams] = None):
             anchor_features=anchor_features,
             img=Image.fromarray(ori_img),
             k=k,
-            iou_thr=1.0
-        )
+            iou_thr=1.0)
         img = clip_detector.draw(
             img,
             result,
@@ -312,7 +341,8 @@ def main(params: Optional[SlidingParams] = None):
             font_thickness=1,
         )
 
-    plt.figure(num=None, figsize=(128, 128), dpi=300, facecolor='w', edgecolor='k')
+    plt.figure(
+        num=None, figsize=(128, 128), dpi=300, facecolor='w', edgecolor='k')
     # plt.imshow(img)
     plt.imsave(f'res.png', img)
 

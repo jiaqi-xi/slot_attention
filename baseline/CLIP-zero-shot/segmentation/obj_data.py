@@ -1,16 +1,43 @@
 import json
 import os
 import cv2
-import clip
+import numpy as np
 from PIL import Image
-from typing import Callable
-from typing import List
-from typing import Optional
+from typing import Callable, Tuple, List, Optional
 
-import pytorch_lightning as pl
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
+import pytorch_lightning as pl
+
+import clip
+
+
+def simple_rescale(x):
+    return x * 2. - 1.
+
+
+def build_data_transforms(params):
+    _, clip_transforms = clip.load(params.clip_arch)
+    if not params.use_clip_vision:
+        from torchvision.transforms import Compose, Resize, ToTensor, \
+            Normalize, Lambda
+        from torchvision.transforms import InterpolationMode
+        BICUBIC = InterpolationMode.BICUBIC
+
+        def _convert_image_to_rgb(image):
+            return image.convert("RGB")
+
+        normalize = Lambda(
+            simple_rescale) if params.simple_normalize else Normalize(
+                (0.48145466, 0.4578275, 0.40821073),
+                (0.26862954, 0.26130258, 0.27577711))
+        clip_transforms = Compose([
+            Resize(params.resolution, interpolation=BICUBIC),
+            _convert_image_to_rgb,
+            ToTensor(),
+            normalize,
+        ])
+    return clip_transforms
 
 
 class CLEVRVisionLanguageCLIPDataset(Dataset):
@@ -67,8 +94,10 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
 
         self.num_videos = len(self.files)
         self.clip_len = clip_len
-        self.base_num = self.clip_len  # for video/frame_idx calculation
-        self.val_divide_num = 2 if self.split == 'val' else 1
+        if self.split == 'train':
+            self.base_num = clip_len
+        else:
+            self.base_num = 1
         self.is_video = is_video
 
         if object_only:
@@ -97,8 +126,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         if self.is_video:
             video = self._get_video(index)  # clip pre-processed video frames
             raw_text = [
-                self._generate_text(index * self.base_num + idx)
-                for idx in range(self.base_num)
+                self._generate_text(index) for _ in range(self.clip_len)
             ]  # raw
             text = clip.tokenize(raw_text)  # tokenize to [N, L]
             assert text.shape[0] == video.shape[0]
@@ -109,11 +137,11 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
                     [raw_text[0], raw_text[4], raw_text[8], raw_text[21]])
             return dict(video=video, text=text, raw_text=raw_text)
 
-        img = self._get_frame(index)  # clip pre-processed img tensor
+        img, ori_img = self._get_frame(index)  # clip pre-processed img tensor
         text = self._generate_text(index)  # raw text
         text = clip.tokenize([text])[0]  # tokenize
 
-        return dict(img=img, text=text)
+        return dict(ori_img=ori_img, img=img, text=text)
 
     def _get_frame(self, index: int):
         """Get one random frame from the video."""
@@ -124,9 +152,10 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         success, img = cap.read()
         assert success, f'read video {image_path} frame {frame_idx} failed!'
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        ori_img = img.astype(np.int64)
         cap.release()
         # return the CLIP pre-processed image
-        return self.clip_transforms(Image.fromarray(img))
+        return self.clip_transforms(Image.fromarray(img)), ori_img
 
     def _get_video(self, index: int):
         # assume input is video index!
@@ -264,15 +293,15 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         return img_paths, all_annos
 
     def _get_idx(self, index):
-        if self.is_video:
-            return index // self.base_num, index % self.base_num
-        video_idx = index // (self.base_num // self.val_divide_num)
-        frame_idx = index % (self.base_num //
-                             self.val_divide_num) * self.val_divide_num
+        video_idx = index // self.base_num
+        frame_idx = index % self.base_num
+        if self.split != 'train' and not self.is_video:
+            # random sample a frame_idx
+            frame_idx = np.random.choice(self.clip_len)
         return video_idx, frame_idx
 
     def __len__(self):
-        return len(self.files) * (self.base_num // self.val_divide_num)
+        return self.num_videos * self.base_num
 
 
 class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
@@ -349,4 +378,117 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=True,
+        )
+
+
+class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
+    """Dataset that loads one random frame from CLEVR video.
+    One text ('color-shape' of an object) directly for one slot!
+    """
+
+    def __init__(
+        self,
+        data_root: str,
+        max_num_images: Optional[int],
+        clip_transforms: Callable,
+        max_n_objects: int = 6,
+        split: str = "train",
+        clip_len: int = 34,
+        is_video: bool = False,
+        shuffle_obj: bool = False,
+        pad_text: str = 'background',
+    ):
+        # TODO: we assume `self.max_n_objects` == 6 here!
+        super().__init__(data_root, max_num_images, clip_transforms,
+                         max_n_objects, split, clip_len, is_video, True, True)
+        assert pad_text  # shouldn't be ''
+        self.shuffle_obj = shuffle_obj
+        self.pad_text = pad_text
+        self.text_num = 1 + self.max_n_objects
+
+    def __getitem__(self, index: int):
+        """Load one video and get only one frame from it"""
+        if self.is_video:
+            video = self._get_video(index)  # clip pre-processed video frames
+            # TODO: since in CLEVR, text is the same through entire video
+            # TODO: so I can simply repeat and stack them
+            raw_text = [self._generate_text(index)] * self.clip_len  # raw
+            tokens = [self._tokenize_text(text) for text in raw_text]
+            return dict(
+                video=video,  # [clip_len, C, H, W]
+                text=torch.stack(tokens, dim=0),  # [clip_len, N + 1, C]
+                raw_text=', '.join(raw_text[0]))  # one sentence
+
+        img, ori_img = self._get_frame(index)  # clip pre-processed img tensor
+        text, obj_mask = self._generate_text(index)  # raw text
+        tokens = self._tokenize_text(text)  # tokenize
+
+        return dict(
+            ori_img=ori_img,
+            img=img,
+            tokens=tokens,
+            obj_mask=obj_mask,
+            data_idx=index)
+
+    def _tokenize_text(self, texts: Tuple[str]):
+        """Tokenize texts and pad to `self.max_n_objects`"""
+        assert len(texts) == self.text_num
+        tokens = clip.tokenize(texts)  # [N + 1, C]
+        return tokens
+
+    def _generate_text(self, index: int, padding: bool = True):
+        """Generate text descriptions of each object in the scene."""
+        img_idx = self._get_idx(index)[0]
+        anno = self.annos[img_idx]
+        colors = [obj['color'] for obj in anno['objects']]
+        shapes = [obj['shape'] for obj in anno['objects']]
+        texts = [
+            'a {} {}'.format(color, shape)
+            for color, shape in zip(colors, shapes)
+        ]
+        # pad with some special texts, e.g. 'background'
+        if padding:
+            obj_mask = np.zeros(self.text_num, dtype=np.bool)
+            obj_mask[:len(texts) + 1] = True  # we also need a background class
+            texts = texts + [self.pad_text] * (self.text_num - len(texts))
+            return texts, obj_mask
+        texts.append(self.pad_text)
+        return texts
+
+
+class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
+
+    def __init__(
+        self,
+        data_root: str,
+        train_batch_size: int,
+        val_batch_size: int,
+        clip_transforms: Callable,
+        num_workers: int,
+        max_n_objects: int = 6,
+        shuffle_obj: bool = False,
+        pad_text: str = 'background',
+    ):
+        super().__init__(data_root, train_batch_size, val_batch_size,
+                         clip_transforms, num_workers, max_n_objects)
+
+        self.shuffle_obj = shuffle_obj
+        self.pad_text = pad_text
+        self.train_dataset = ObjCLEVRVisionLanguageCLIPDataset(
+            data_root=self.data_root,
+            max_num_images=self.num_train_images,
+            clip_transforms=self.clip_transforms,
+            max_n_objects=self.max_n_objects,
+            split='train',
+            shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
+        )
+        self.val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
+            data_root=self.data_root,
+            max_num_images=self.num_val_images,
+            clip_transforms=self.clip_transforms,
+            max_n_objects=self.max_n_objects,
+            split='val',
+            shuffle_obj=self.shuffle_obj,
+            pad_text=self.pad_text,
         )
