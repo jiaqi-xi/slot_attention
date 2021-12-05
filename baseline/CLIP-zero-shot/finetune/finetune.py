@@ -29,9 +29,7 @@ def build_model(params: FinetuneParams, ckp_path=None):
     model, preprocess = clip.load(params.clip_arch, device=device, jit=False)
     if params.freeze_text_encoder:
         model = clip.freeze_text_encoder(model)
-    if device == "cpu":
-        model.float()
-    else:
+    if not args.fp32:
         clip.convert_weights(model)
 
     # Params used from paper
@@ -44,7 +42,7 @@ def build_model(params: FinetuneParams, ckp_path=None):
         weight_decay=0.2)
     start_epoch = 0
 
-    if ckp_path is not None:
+    if ckp_path:
         checkpoint = torch.load(ckp_path)
         checkpoint['model_state_dict'][
             'input_resolution'] = model.input_resolution  # 224
@@ -70,8 +68,9 @@ def save_ckp(save_name, model, optimizer, epoch):
 def main():
     for epoch in range(start_epoch, params.epochs):
         train_loader = datamodule.train_dataloader()
-        loss_avg = AverageMeter()
+        loss_avg, t_avg = AverageMeter(), AverageMeter()
         for step, batch in enumerate(train_loader):
+            start_t = time.time()
             optimizer.zero_grad()
             images, texts = batch['img'].cuda(), batch['text'].cuda()
             B = images.shape[0]
@@ -83,19 +82,23 @@ def main():
 
             total_loss = (loss_img(logits_per_image, ground_truth) +
                           loss_txt(logits_per_text, ground_truth)) / 2.0
+
             total_loss.backward()
-            if device == "cpu":
-                optimizer.step()
-            else:
+            if not args.fp32:
                 clip.convert_models_to_fp32(model)
                 optimizer.step()
                 clip.convert_weights(model)
+            else:
+                optimizer.step()
 
             loss_avg.update(total_loss.item(), B)
+            t_avg.update(time.time() - start_t)
             if step % 50 == 0:
-                print(f'Epoch {epoch}, step {step}, loss: {loss_avg.avg:.6f}')
-                wandb.log({'loss': loss_avg.avg})
-                loss_avg = AverageMeter()
+                gpu_used = torch.cuda.memory_reserved(0) / 1024 / 1024 / 1024
+                print(f'Epoch {epoch}, step {step}, loss: {loss_avg.avg:.6f}\n'
+                      f'Time: {t_avg.avg:.2f}s, GPU memory {gpu_used:.2f}GB')
+                wandb.log({'loss': loss_avg.avg, 'time': t_avg.avg})
+                loss_avg, t_avg = AverageMeter(), AverageMeter()
 
         save_name = os.path.join(logs_dir, f'clip{epoch}.pth')
         save_ckp(save_name, model, optimizer, epoch)
@@ -122,9 +125,10 @@ def val_epoch():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Finetune CLIP')
     parser.add_argument('--weight', type=str, default='')
+    parser.add_argument('--fp32', action='store_true')
     args = parser.parse_args()
-
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = 'cuda:0'
+    print('{} FP16 training'.format('Not using' if args.fp32 else 'Using'))
 
     params = FinetuneParams()
     model, preproc, optimizer, start_epoch = build_model(params, args.weight)

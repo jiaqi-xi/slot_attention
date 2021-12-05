@@ -45,10 +45,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         self.num_videos = len(self.files)
         self.clip_len = clip_len
         self.prompt = prompt
-        if self.split == 'train':
-            self.base_num = clip_len
-        else:
-            self.base_num = 1
+        self.base_num = clip_len
         self.separater = separater
 
     def __getitem__(self, index: int):
@@ -104,9 +101,6 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
     def _get_idx(self, index):
         video_idx = index // self.base_num
         frame_idx = index % self.base_num
-        if self.split != 'train':
-            # random sample a frame_idx
-            frame_idx = np.random.choice(self.clip_len)
         return video_idx, frame_idx
 
     def __len__(self):
@@ -189,11 +183,11 @@ class DDPCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             separater=separater)
 
     def train_dataloader(self):
-        sampler = DistributedSampler(self.train_dataset)
+        sampler = DistributedSampler(
+            self.train_dataset, shuffle=True, drop_last=True)
         return DataLoader(
             self.train_dataset,
             batch_size=self.train_batch_size,
-            shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
             drop_last=True,
@@ -201,11 +195,10 @@ class DDPCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
         )
 
     def val_dataloader(self):
-        sampler = DistributedSampler(self.val_dataset)
+        sampler = DistributedSampler(self.val_dataset, shuffle=False)
         return DataLoader(
             self.val_dataset,
             batch_size=self.val_batch_size,
-            shuffle=False,
             num_workers=self.num_workers,
             pin_memory=True,
             sampler=sampler,

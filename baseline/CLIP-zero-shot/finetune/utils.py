@@ -30,11 +30,11 @@ def all_gather(tensor):
     return AllGatherFunction.apply(tensor)
 
 
-def reduce_tensor(tensor):
-    rt = tensor.clone()
-    dist.all_reduce(rt, op=dist.reduce_op.SUM)
-    rt /= dist.get_world_size()
-    return rt
+def gather_scalar(scalar):
+    output = list(
+        torch.empty_like(scalar) for _ in range(dist.get_world_size()))
+    dist.all_gather(output, scalar)
+    return torch.tensor(output)
 
 
 class AverageMeter(object):

@@ -13,7 +13,7 @@ class FinetuneParams:
     separater: str = ', '
 
     # training settings
-    batch_size: int = 256
+    batch_size: int = 180
     num_workers: int = 6
     lr: float = 5e-5
     epochs: int = 100
