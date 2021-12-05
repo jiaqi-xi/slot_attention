@@ -1,5 +1,6 @@
 import os
 import cv2
+import argparse
 import numpy as np
 from tqdm import tqdm
 from matplotlib import pyplot as plt
@@ -50,6 +51,10 @@ def main(params: SegParams):
     # clip model
     device = "cuda" if torch.cuda.is_available() else "cpu"
     clip_model, preprocesser = clip.load(params.clip_arch, device=device)
+    # load finetuned CLIP weight
+    if args.weight:
+        ckp = torch.load(args.weight, map_location='cpu')
+        clip_model.load_state_dict(ckp['model_state_dict'])
 
     # build dataloader
     val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
@@ -134,6 +139,9 @@ def test(clip_model, dataloader, dataset, params: SegParams):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='CLIP for zero-shot seg')
+    parser.add_argument('--weight', type=str, default='')
+    args = parser.parse_args()
     vis_path = './vis/'
     os.makedirs(vis_path, exist_ok=True)
     params = SegParams()

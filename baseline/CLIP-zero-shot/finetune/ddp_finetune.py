@@ -1,6 +1,8 @@
 import os
 import time
 import argparse
+import importlib
+import numpy as np
 from tqdm import tqdm
 
 import torch
@@ -116,13 +118,13 @@ def main():
                 loss_avg, t_avg = AverageMeter(), AverageMeter()
             torch.distributed.barrier()
 
-        save_name = os.path.join(logs_dir, f'clip{epoch}.pth')
+        save_name = os.path.join(logs_dir, f'clip{epoch:03d}.pth')
         if args.local_rank == 0:
             save_ckp(save_name, model, optimizer, epoch)
 
         with torch.no_grad():
             try:
-                val_loss = val_epoch(model.module, datamodule)
+                val_loss = val_epoch(model, datamodule)
             except:
                 val_loss = torch.zeros([])
 
@@ -157,6 +159,7 @@ def val_epoch(model, datamodule):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Finetune CLIP')
+    parser.add_argument('--params', type=str, default='params')
     parser.add_argument('--weight', type=str, default='')
     parser.add_argument('--fp32', action='store_true')
     parser.add_argument('--local_rank', type=int, default=0)
@@ -168,23 +171,35 @@ if __name__ == '__main__':
     torch.distributed.init_process_group(backend='nccl')
     device = torch.device(f'cuda:{args.local_rank}')
 
-    params = FinetuneParams()
-    model, preproc, optimizer, start_epoch = build_model(params, args.weight)
-    datamodule = build_datamodule(params, preproc)
-    loss_img = nn.CrossEntropyLoss()
-    loss_txt = nn.CrossEntropyLoss()
-
     # log
     start_datetime = time.strftime("%Y-%m-%d %H-%M-%S", time.localtime())
-    logs_dir = f"logs/{start_datetime}".format()
     SLURM_JOB_ID = os.environ.get('SLURM_JOB_ID')
+    logs_dir = f'checkpoint/{start_datetime}-{SLURM_JOB_ID}'
     exp_name = f'finetune_clip-{SLURM_JOB_ID}'
+    # automatically detect ckeckpoint
+    if os.path.exists(logs_dir):
+        ckps = [ckp for ckp in os.listdir(logs_dir) if ckp.startswith('clip')]
+        if ckps:
+            epochs = [int(ckp[4:7]) for ckp in ckps]
+            last_ckp = ckps[np.argmax(epochs)]
+            print(f'Automatically detect checkpoint {last_ckp}')
+            args.weight = os.path.join(logs_dir, last_ckp)
+
     if args.local_rank == 0:
         os.makedirs(logs_dir, exist_ok=True)
         wandb.init(
             project='slot-attention-clevr6-language-video',
             name=exp_name,
             id=exp_name)
+
+    if args.params.endswith('.py'):
+        args.params = args.params[:-3]
+    params = importlib.import_module(args.params)
+    params = params.FinetuneParams()
+    model, preproc, optimizer, start_epoch = build_model(params, args.weight)
+    datamodule = build_datamodule(params, preproc)
+    loss_img = nn.CrossEntropyLoss()
+    loss_txt = nn.CrossEntropyLoss()
 
     torch.distributed.barrier()
     main()

@@ -1,4 +1,5 @@
 import cv2
+import argparse
 import numpy as np
 from typing import Optional
 
@@ -254,6 +255,10 @@ def main(params: Optional[SlidingParams] = None):
     # clip model
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = clip.load(params.clip_arch, device=device)
+    # load finetuned CLIP weight
+    if args.weight:
+        ckp = torch.load(args.weight, map_location='cpu')
+        model.load_state_dict(ckp['model_state_dict'])
     clip_detector = CLIPDetectorV0(model, preprocess, device)
 
     # get coords and anchor features
@@ -297,5 +302,9 @@ def main(params: Optional[SlidingParams] = None):
     plt.imsave(f'res.png', img)
 
 
-params = SlidingParams()
-main(params)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='CLIP for zero-shot seg')
+    parser.add_argument('--weight', type=str, default='')
+    args = parser.parse_args()
+    params = SlidingParams()
+    main(params)
