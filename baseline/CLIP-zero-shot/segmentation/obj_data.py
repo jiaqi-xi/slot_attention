@@ -3,14 +3,11 @@ import os
 import cv2
 import numpy as np
 from PIL import Image
-from typing import Callable
-from typing import List
-from typing import Optional
+from typing import Callable, Tuple, List, Optional
 
-import pytorch_lightning as pl
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
+import pytorch_lightning as pl
 
 import clip
 
@@ -112,11 +109,11 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
                     [raw_text[0], raw_text[4], raw_text[8], raw_text[21]])
             return dict(video=video, text=text, raw_text=raw_text)
 
-        img = self._get_frame(index)  # clip pre-processed img tensor
+        img, ori_img = self._get_frame(index)  # clip pre-processed img tensor
         text = self._generate_text(index)  # raw text
         text = clip.tokenize([text])[0]  # tokenize
 
-        return dict(img=img, text=text)
+        return dict(ori_img=ori_img, img=img, text=text)
 
     def _get_frame(self, index: int):
         """Get one random frame from the video."""
@@ -127,9 +124,10 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         success, img = cap.read()
         assert success, f'read video {image_path} frame {frame_idx} failed!'
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        ori_img = img.astype(np.int64)
         cap.release()
         # return the CLIP pre-processed image
-        return self.clip_transforms(Image.fromarray(img))
+        return self.clip_transforms(Image.fromarray(img)), ori_img
 
     def _get_video(self, index: int):
         # assume input is video index!
@@ -278,78 +276,78 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         return self.num_videos * self.base_num
 
 
-class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
+class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
+    """Dataset that loads one random frame from CLEVR video.
+    One text ('color-shape' of an object) directly for one slot!
+    """
 
     def __init__(
-            self,
-            data_root: str,
-            train_batch_size: int,
-            val_batch_size: int,
-            clip_transforms: Callable,
-            num_workers: int,
-            max_n_objects: int = 6,
-            num_train_images: Optional[int] = None,
-            num_val_images: Optional[int] = None,
-            fine_grained: bool = True,
-            object_only: bool = False,
-            separater: str = ', ',
-            overfit: int = -1,  # overfit to one training example
+        self,
+        data_root: str,
+        max_num_images: Optional[int],
+        clip_transforms: Callable,
+        max_n_objects: int = 6,
+        split: str = "train",
+        clip_len: int = 34,
+        prompt: str = 'a {color} {shape}',
+        is_video: bool = False,
+        shuffle_obj: bool = False,
+        pad_text: str = 'background',
     ):
-        super().__init__()
-        self.data_root = data_root
-        self.train_batch_size = train_batch_size
-        self.val_batch_size = val_batch_size
-        self.clip_transforms = clip_transforms
-        self.max_n_objects = max_n_objects
-        self.num_workers = num_workers
-        self.num_train_images = num_train_images
-        self.num_val_images = num_val_images
-        self.object_only = object_only
-        self.fine_grained = fine_grained
-        self.separater = separater
-        self.overfit = overfit
+        # TODO: we assume `self.max_n_objects` == 6 here!
+        super().__init__(data_root, max_num_images, clip_transforms,
+                         max_n_objects, split, clip_len, is_video, True, True)
+        assert pad_text  # shouldn't be ''
+        self.prompt = prompt
+        self.shuffle_obj = shuffle_obj
+        self.pad_text = pad_text
+        self.text_num = 1 + self.max_n_objects
 
-        train_split = 'val' if self.overfit > 0 else 'train'
-        self.train_dataset = CLEVRVisionLanguageCLIPDataset(
-            data_root=self.data_root,
-            max_num_images=self.num_train_images,
-            clip_transforms=self.clip_transforms,
-            split=train_split,
-            max_n_objects=self.max_n_objects,
-            fine_grained=self.fine_grained,
-            object_only=self.object_only,
-            separater=self.separater,
-            overfit=self.overfit,
-            repeat=(self.overfit > 0),
-        )
-        self.val_dataset = CLEVRVisionLanguageCLIPDataset(
-            data_root=self.data_root,
-            max_num_images=self.num_val_images,
-            clip_transforms=self.clip_transforms,
-            split='val',
-            max_n_objects=self.max_n_objects,
-            fine_grained=self.fine_grained,
-            object_only=self.object_only,
-            separater=self.separater,
-            overfit=self.overfit,
-            repeat=False,
-        )
+    def __getitem__(self, index: int):
+        """Load one video and get only one frame from it"""
+        if self.is_video:
+            video = self._get_video(index)  # clip pre-processed video frames
+            # TODO: since in CLEVR, text is the same through entire video
+            # TODO: so I can simply repeat and stack them
+            raw_text = [self._generate_text(index)] * self.clip_len  # raw
+            tokens = [self._tokenize_text(text) for text in raw_text]
+            return dict(
+                video=video,  # [clip_len, C, H, W]
+                text=torch.stack(tokens, dim=0),  # [clip_len, N + 1, C]
+                raw_text=', '.join(raw_text[0]))  # one sentence
 
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.train_batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            pin_memory=True,
-            drop_last=True,
-        )
+        img, ori_img = self._get_frame(index)  # clip pre-processed img tensor
+        text, obj_mask = self._generate_text(index)  # raw text
+        tokens = self._tokenize_text(text)  # tokenize
 
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.val_batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            pin_memory=True,
-        )
+        return dict(
+            ori_img=ori_img,
+            img=img,
+            tokens=tokens,
+            obj_mask=obj_mask,
+            data_idx=index)
+
+    def _tokenize_text(self, texts: Tuple[str]):
+        """Tokenize texts and pad to `self.max_n_objects`"""
+        assert len(texts) == self.text_num
+        tokens = clip.tokenize(texts)  # [N + 1, C]
+        return tokens
+
+    def _generate_text(self, index: int, padding: bool = True):
+        """Generate text descriptions of each object in the scene."""
+        img_idx = self._get_idx(index)[0]
+        anno = self.annos[img_idx]
+        colors = [obj['color'] for obj in anno['objects']]
+        shapes = [obj['shape'] for obj in anno['objects']]
+        texts = [
+            self.prompt.format(color=color, shape=shape)
+            for color, shape in zip(colors, shapes)
+        ]
+        # pad with some special texts, e.g. 'background'
+        if padding:
+            obj_mask = np.zeros(self.text_num, dtype=np.bool)
+            obj_mask[:len(texts) + 1] = True  # we also need a background class
+            texts = texts + [self.pad_text] * (self.text_num - len(texts))
+            return texts, obj_mask
+        texts.append(self.pad_text)
+        return texts

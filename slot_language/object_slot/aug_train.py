@@ -1,4 +1,9 @@
+import torch
+
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 import os
+import sys
 import importlib
 import argparse
 import numpy as np
@@ -9,26 +14,57 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 from obj_train import build_slot_attention_model, build_data_transforms, \
-    process_ckp, VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
+    process_ckp, VideoLogCallback, ImageLogCallback
 from obj_data import ObjAugCLEVRVisionLanguageCLIPDataModule
-from pos_train import build_slot_attention_model as build_pos_slot_attention_model
-from unet_train import build_slot_attention_model as build_unet_slot_attention_model
 from aug_method import ObjAugSlotAttentionVideoLanguageMethod as SlotAttentionMethod
-from aug_model import ObjAugSlotAttentionModel
+from aug_model import ObjAugSlotAttentionModel, SemPosSepObjAugSlotAttentionModel
 from aug_params import SlotAttentionParams
+
+sys.path.append('../viewpoint_dataset/')
+
+from viewpoint_data import ObjAugCLEVRVisionLanguageViewpointDataModule
+
+
+def build_data_module(params: SlotAttentionParams):
+    if '4obj' in params.data_root:
+        assert params.num_slots == 5
+    elif 'viewpoint' in params.data_root:
+        assert params.num_slots == 3
+    else:
+        assert params.num_slots == 7
+    clip_transforms = build_data_transforms(params)
+    data_module = ObjAugCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
+        params.data_root else ObjAugCLEVRVisionLanguageCLIPDataModule
+    clevr_datamodule = data_module(
+        data_root=params.data_root,
+        train_batch_size=params.batch_size,
+        val_batch_size=params.val_batch_size,
+        clip_transforms=clip_transforms,
+        num_workers=params.num_workers,
+        max_n_objects=params.num_slots - 1,
+        prompt=params.prompt,
+        shuffle_obj=params.shuffle_obj,
+        pad_text=params.pad_text,
+        flip_img=params.flip_img,
+    )
+    return clevr_datamodule
 
 
 def build_aug_slot_attention_model(params: SlotAttentionParams):
-    if params.use_unet_slot_model:
-        print('Using UNetSlotAttentionModel!')
-        model = build_unet_slot_attention_model(params)
-    elif params.use_slot_pos_emb:
-        print('Using PosSlotAttentionModel!')
-        model = build_pos_slot_attention_model(params)
-    else:
-        print('Using ObjSlotAttentionModel!')
-        model = build_slot_attention_model(params)
-    model = ObjAugSlotAttentionModel(model=model)
+    model = build_slot_attention_model(params)
+    model_ = SemPosSepObjAugSlotAttentionModel if \
+        params.use_sempos_sep else ObjAugSlotAttentionModel
+    model = model_(
+        model=model,
+        use_contrastive_loss=params.use_contrastive_loss,
+        contrastive_mlp=params.contrastive_mlp,
+        contrastive_T=params.contrastive_T,
+        contrastive_normalize=params.contrastive_normalize,
+        contrastive_stop_grad=params.contrastive_stop_grad,
+        use_text_recon_loss=params.use_text_recon_loss,
+        text_recon_mlp=params.text_recon_mlp,
+        text_recon_normalize=params.text_recon_normalize,
+        use_feature_loss=params.use_feature_loss)
     return model
 
 
@@ -51,20 +87,9 @@ def main(params: Optional[SlotAttentionParams] = None):
         if args.weight:
             print(f'INFO: loading checkpoint {args.weight}')
 
-    clip_transforms = build_data_transforms(params)
-
     model = build_aug_slot_attention_model(params)
 
-    clevr_datamodule = ObjAugCLEVRVisionLanguageCLIPDataModule(
-        data_root=params.data_root,
-        train_batch_size=params.batch_size,
-        val_batch_size=params.val_batch_size,
-        clip_transforms=clip_transforms,
-        num_workers=params.num_workers,
-        max_n_objects=params.num_slots - 1,
-        shuffle_obj=params.shuffle_obj,
-        flip_img=params.flip_img,
-    )
+    clevr_datamodule = build_data_module(params)
 
     method = SlotAttentionMethod(
         model=model, datamodule=clevr_datamodule, params=params)
@@ -114,8 +139,7 @@ def main(params: Optional[SlotAttentionParams] = None):
         val_check_interval=args.eval_interval,
         callbacks=[
             LearningRateMonitor("step"),
-            PosSlotImageLogCallback()
-            if params.use_slot_pos_emb else ImageLogCallback(),
+            ImageLogCallback(),
             VideoLogCallback(),
             checkpoint_callback,
         ] if params.is_logger_enabled else [checkpoint_callback],

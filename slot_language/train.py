@@ -23,7 +23,7 @@ def build_data_transforms(params: SlotAttentionParams):
     _, clip_transforms = clip.load(params.clip_arch)
     if not params.use_clip_vision:
         from torchvision.transforms import Compose, Resize, ToTensor, \
-            Normalize, Lambda
+            Normalize, Lambda, CenterCrop
         from torchvision.transforms import InterpolationMode
         BICUBIC = InterpolationMode.BICUBIC
 
@@ -34,12 +34,15 @@ def build_data_transforms(params: SlotAttentionParams):
             simple_rescale) if params.simple_normalize else Normalize(
                 (0.48145466, 0.4578275, 0.40821073),
                 (0.26862954, 0.26130258, 0.27577711))
-        clip_transforms = Compose([
+        transforms = [
             Resize(params.resolution, interpolation=BICUBIC),
             _convert_image_to_rgb,
             ToTensor(),
             normalize,
-        ])
+        ]
+        if hasattr(params, 'center_crop') and params.center_crop is not None:
+            transforms.insert(0, CenterCrop(params.center_crop))
+        clip_transforms = Compose(transforms)
     return clip_transforms
 
 
@@ -104,22 +107,22 @@ def build_slot_attention_model(params: SlotAttentionParams):
         resolution=params.resolution,
         num_slots=params.num_slots,
         num_iterations=params.num_iterations,
-        enc_resolution=params.enc_resolution,
-        enc_channels=params.clip_vision_channel,
-        enc_pos_enc=params.enc_pos_enc,
         slot_size=params.slot_size,
-        dec_kernel_size=params.dec_kernel_size,
-        dec_hidden_dims=params.dec_channels,
-        dec_resolution=params.dec_resolution,
         slot_mlp_size=params.slot_mlp_size,
+        out_features=params.out_features,
+        kernel_size=params.kernel_size,
+        enc_channels=params.enc_channels,
+        dec_channels=params.dec_channels,
+        dec_resolution=params.dec_resolution,
+        use_entropy_loss=params.use_entropy_loss,
+        use_bg_sep_slot=params.use_bg_sep_slot,
+        enc_resolution=params.enc_resolution,
+        visual_feats_channels=params.clip_vision_channel,
         use_word_set=params.use_text2slot
         and params.text2slot_arch in ['Transformer', 'DETR'],
         use_padding_mask=params.use_text2slot
         and params.text2slot_arch in ['Transformer', 'DETR']
         and params.text2slot_padding_mask,
-        use_entropy_loss=params.use_entropy_loss,
-        use_bg_sep_slot=params.use_bg_sep_slot if hasattr(
-            params, 'use_bg_sep_slot') else False,
     )
     return model
 

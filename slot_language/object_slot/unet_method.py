@@ -1,1 +1,0 @@
-from obj_method import ObjSlotAttentionVideoLanguageMethod as UNetSlotAttentionVideoLanguageMethod

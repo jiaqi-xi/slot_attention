@@ -14,7 +14,6 @@ class SlotAttentionParams:
     dec_hiddens: Tuple[int, ...] = (128, 64, 64, 64, 64)
     decoder_resolution: Tuple[int, int] = (8, 8)
     use_unet: bool = False
-    relu_before_pe: bool = True  # SlotAttn is True while SAVi is False
     use_deconv: bool = True
 
     # slot attention module
@@ -25,8 +24,11 @@ class SlotAttentionParams:
     slot_mlp_size: int = 256
     # whether set the slot parameters as learnable (to be updated by BP)
     learnable_slot = True
+
     # perform recurrent slot-attention
+    recur_predictor: str = ''  # currently support ['', 'MLP']
     stop_recur_slot_grad: bool = False
+
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0

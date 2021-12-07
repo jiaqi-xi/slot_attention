@@ -12,25 +12,27 @@ class SlotAttentionParams:
     # dim of slots embedding
     slot_size: int = 64
     num_iterations: int = 3
+    # whether treat bg slot separately
+    use_bg_sep_slot: bool = False
     # MLP hidden size in Slot Attention
     slot_mlp_size: int = 128  # FFN after cross attention
-    dec_resolution: Tuple[int,
-                          int] = (resolution[0] // 16, resolution[1] // 16)
-    dec_kernel_size: int = 5
-    dec_channels: Tuple[int, ...] = tuple(64 for _ in range(4))
+    # Conv encoder-decoder
+    out_features: int = 64
+    dec_resolution: Tuple[int, int] = (8, 8)
+    kernel_size: int = 5
+    enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64)
+    dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64)
+
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1.0
-    # whether treat bg slot separately
-    use_bg_sep_slot: bool = False
 
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
     clip_arch: str = 'ViT-B/32'
     enc_resolution: Tuple[int, int] = resolution  # image size
-    clip_vision_channel: int = 64
+    clip_vision_channel: int = enc_channels[-1]
     clip_text_channel: int = 512
-    enc_pos_enc: bool = True
 
     # Text2Slot model
     use_text2slot: bool = True
@@ -53,6 +55,7 @@ class SlotAttentionParams:
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
+    center_crop: Tuple[int] = None  # (128, 128)
     # whether load different text for different video period
     fine_grained: bool = True
     # whether text is complete action or just object names

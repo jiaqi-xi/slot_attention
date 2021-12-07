@@ -19,7 +19,7 @@ sys.path.append('../')
 
 from train import build_data_transforms, process_ckp
 from text_model import ObjMLPText2Slot
-from utils import VideoLogCallback, ImageLogCallback, PosSlotImageLogCallback
+from utils import VideoLogCallback, ImageLogCallback
 
 sys.path.append('../viewpoint_dataset/')
 
@@ -43,7 +43,9 @@ def build_data_module(params: SlotAttentionParams):
         clip_transforms=clip_transforms,
         num_workers=params.num_workers,
         max_n_objects=params.num_slots - 1,
+        prompt=params.prompt,
         shuffle_obj=params.shuffle_obj,
+        pad_text=params.pad_text,
     )
     return clevr_datamodule
 
@@ -57,8 +59,7 @@ def build_text2slot_model(params: SlotAttentionParams):
             params.slot_size,
             params.text2slot_hidden_sizes,
             use_bn=False,
-            normalize_slots=params.normalize_slots,
-            random_bg_slot=params.random_bg_slot)
+            normalize_slots=params.normalize_slots)
     return text2slot_model
 
 
@@ -75,17 +76,20 @@ def build_slot_attention_model(params: SlotAttentionParams):
             resolution=params.resolution,
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
-            enc_resolution=params.enc_resolution,
-            enc_channels=params.clip_vision_channel,
             slot_size=params.slot_size,
+            slot_mlp_size=params.slot_mlp_size,
+            out_features=params.out_features,
+            kernel_size=params.kernel_size,
             enc_pos_size=params.enc_pos_size,
             dec_pos_size=params.dec_pos_size,
-            dec_kernel_size=params.dec_kernel_size,
-            dec_hidden_dims=params.dec_channels,
+            use_unet=params.use_unet,
+            enc_channels=params.enc_channels,
+            dec_channels=params.dec_channels,
             dec_resolution=params.dec_resolution,
-            slot_mlp_size=params.slot_mlp_size,
-            use_entropy_loss=params.use_entropy_loss,
             use_bg_sep_slot=params.use_bg_sep_slot,
+            enc_resolution=params.enc_resolution,
+            visual_feats_channels=params.clip_vision_channel,
+            use_entropy_loss=params.use_entropy_loss,
         )
     else:
         print('Using ObjSlotAttentionModel!')
@@ -97,16 +101,18 @@ def build_slot_attention_model(params: SlotAttentionParams):
             resolution=params.resolution,
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
-            enc_resolution=params.enc_resolution,
-            enc_channels=params.clip_vision_channel,
-            enc_pos_enc=params.enc_pos_enc,
             slot_size=params.slot_size,
-            dec_kernel_size=params.dec_kernel_size,
-            dec_hidden_dims=params.dec_channels,
-            dec_resolution=params.dec_resolution,
             slot_mlp_size=params.slot_mlp_size,
-            use_entropy_loss=params.use_entropy_loss,
+            out_features=params.out_features,
+            kernel_size=params.kernel_size,
+            use_unet=params.use_unet,
+            enc_channels=params.enc_channels,
+            dec_channels=params.dec_channels,
+            dec_resolution=params.dec_resolution,
             use_bg_sep_slot=params.use_bg_sep_slot,
+            enc_resolution=params.enc_resolution,
+            visual_feats_channels=params.clip_vision_channel,
+            use_entropy_loss=params.use_entropy_loss,
         )
     return model
 

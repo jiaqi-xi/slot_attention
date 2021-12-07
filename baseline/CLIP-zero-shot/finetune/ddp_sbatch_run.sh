@@ -57,10 +57,11 @@ gcc --version >> $LOG_FILE                           # log GCC version
 nvcc --version >> $LOG_FILE                          # log NVCC version
 
 # run python file
-PL_FAULT_TOLERANT_TRAINING=1 python $PY_FILE $PY_ARGS >> $LOG_FILE                # the script above, with its standard output appended log file
-
+python -m torch.distributed.launch --nproc_per_node=$GPUS $PY_FILE $PY_ARGS >> $LOG_FILE
 " >> ./run-${JOB_NAME}.slrm
 
+# we don't want the temporal ckp file...
+rm -f .pl_auto_save.ckpt
 
 # run the created file
 sbatch run-${JOB_NAME}.slrm

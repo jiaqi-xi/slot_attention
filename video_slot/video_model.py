@@ -30,23 +30,35 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         out_features: int = 64,
         enc_hiddens: Tuple[int, ...] = (3, 32, 32, 32, 32),
         use_unet: bool = False,
-        relu_before_pe: bool = True,
         dec_hiddens: Tuple[int, ...] = (128, 64, 64, 64, 64),
         decoder_resolution: Tuple[int, int] = (8, 8),
         use_deconv: bool = True,
         slot_mlp_size: int = 256,
         learnable_slot: bool = True,
+        recur_predictor: str = '',
         stop_recur_slot_grad: bool = False,
         use_entropy_loss: bool = False,
     ):
         super().__init__(resolution, num_slots, num_iterations, kernel_size,
                          slot_size, out_features, enc_hiddens, use_unet,
-                         relu_before_pe, dec_hiddens, decoder_resolution,
-                         use_deconv, slot_mlp_size, learnable_slot,
-                         use_entropy_loss)
+                         dec_hiddens, decoder_resolution, use_deconv,
+                         slot_mlp_size, learnable_slot, use_entropy_loss)
 
         self.num_clips = num_clips
         self.stop_recur_slot_grad = stop_recur_slot_grad
+        self._build_predictor(recur_predictor)
+
+    def _build_predictor(self, recur_predictor):
+        if not recur_predictor:
+            self.recur_predictor = None
+            print('Not using any predictor!')
+            return
+        assert recur_predictor in ['MLP']
+        # follow the SAVi paper, MLP+LN with res connection
+        if recur_predictor == 'MLP':
+            print('Using MLP Predictor!')
+            self.recur_predictor = ResidualMLP(
+                [self.slot_size, self.slot_size * 2, self.slot_size])
 
     def forward(self, x):
         """x: [B, num_clips, C, H, W]"""
@@ -72,7 +84,8 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         for clip_idx in range(0, num_clips, clip_len):
             rec_combs, recs, masks, slots = self._forward(
                 x[:, clip_idx:clip_idx + clip_len], prev_slots)
-            all_rec_combs.append(rec_combs.unflatten(0, (B, -1)).cpu().detach())
+            all_rec_combs.append(
+                rec_combs.unflatten(0, (B, -1)).cpu().detach())
             all_recs.append(recs.unflatten(0, (B, -1)).cpu().detach())
             all_masks.append(masks.unflatten(0, (B, -1)).cpu().detach())
             all_slots.append(slots.unflatten(0, (B, -1)).cpu().detach())
@@ -117,6 +130,9 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
             # optionally stop the grad of slot_prev
             if self.stop_recur_slot_grad:
                 slot_prev = slot_prev.detach()
+            # optionally use predictor
+            if self.recur_predictor is not None:
+                slot_prev = self.recur_predictor(slot_prev)
         # [batch_size*num_clips, self.num_slots, self.slot_size]
         slots = torch.stack(
             slots, dim=1).reshape(-1, self.num_slots, self.slot_size)
@@ -147,3 +163,26 @@ class RecurrentSlotAttentionModel(SlotAttentionModel):
         # TODO: I return slot_recons instead of slots here!
         # TODO: this is different from the other slot-att models
         return recon_combined, recons, masks, slots  # slot_recons
+
+
+class ResidualMLP(nn.Module):
+
+    def __init__(self, channels):
+        super().__init__()
+
+        assert len(channels) >= 2
+        # since there is LN at the beginning of slot-attn
+        # so only use a pre-ln here
+        self.ln = nn.LayerNorm(channels[0])
+        modules = []
+        for i in range(len(channels) - 2):
+            modules += [nn.Linear(channels[i], channels[i + 1]), nn.ReLU()]
+        modules.append(nn.Linear(channels[-2], channels[-1]))
+        self.mlp = nn.Sequential(*modules)
+
+    def forward(self, x):
+        x = self.ln(x)
+        res = x
+        out = self.mlp(x)
+        out = out + res
+        return out

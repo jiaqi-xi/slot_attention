@@ -32,7 +32,11 @@ def main(params: Optional[SlotAttentionParams] = None):
 
     model = SlotAttentionMethod(
         model=model, datamodule=clevr_datamodule, params=params)
-    model.load_state_dict(torch.load(args.weight)['state_dict'], strict=True)
+    ckp = torch.load(args.weight)['state_dict']
+    # aug_params trained models are 'model.model.xxx'
+    if 'aug_params' in args.weight:
+        ckp = {k[6:]: v for k, v in ckp.items() if 'model.model.' in k}
+    model.load_state_dict(ckp, strict=True)
     model = model.cuda().eval()
 
     save_folder = os.path.join(os.path.dirname(args.weight), 'vis')
@@ -53,11 +57,10 @@ def inference(model, dataset, num=3):
     all_texts = []
     for idx in data_idx:
         batch = dataset.__getitem__(idx)  # dict with key video, text, raw_text
-        video, text, padding, raw_text = batch['video'], \
-            batch['text'], batch['padding'], batch['raw_text']
+        video, text, raw_text = \
+            batch['video'], batch['text'], batch['raw_text']
         all_texts.append(raw_text)
-        batch = dict(
-            img=video.float().cuda(), text=text.cuda(), padding=padding.cuda())
+        batch = dict(img=video.float().cuda(), text=text.cuda())
         recon_combined, recons, masks, slots = model(batch)
         out = to_rgb_from_tensor(
             torch.cat(

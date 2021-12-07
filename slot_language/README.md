@@ -14,7 +14,6 @@ Things that can be tuned now:
     -   Vision encoder:
         -   `clip_arch`: default is `ViT`, I think that's fine and we can try other variants like ResNet50 if necessary, _could try_
         -   `clip_global_feats`: by default we take the features of each patch, since I believe the global one is trained in contrastive learning, while our task somehow requires spatial information to localize objects, **we should try**
-        -   `enc_pos_enc`: by default we don't apply positional encoding to the ViT features because there's already in the Transformer layers, **we should try**
     -   Slot attention module:
         -   `num_slots`: default is 7, that counts for `max_obj_num + 1`. But we have the prior here that, at most 2 objects are involved in one action, can we inject inductive bias via setting less slots here? **we should try**
         -   `slot_size`: default is 64, IMO that's fine, maybe try enlarging it to 128, _could try_

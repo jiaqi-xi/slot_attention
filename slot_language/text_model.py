@@ -5,31 +5,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.nn import TransformerDecoder, TransformerDecoderLayer
 
-from utils import Tensor
-
-
-def fc_bn_relu(in_dim, out_dim, use_bn):
-    if use_bn:
-        return nn.Sequential(
-            nn.Linear(in_dim, out_dim, bias=False),
-            nn.BatchNorm1d(out_dim),
-            nn.ReLU(),
-        )
-    return nn.Sequential(
-        nn.Linear(in_dim, out_dim, bias=True),
-        nn.ReLU(),
-    )
-
-
-def build_mlps(in_channels, hidden_sizes, out_channels, use_bn):
-    if hidden_sizes is None or len(hidden_sizes) == 0:
-        return nn.Linear(in_channels, out_channels)
-    modules = [fc_bn_relu(in_channels, hidden_sizes[0], use_bn=use_bn)]
-    for i in range(0, len(hidden_sizes) - 1):
-        modules.append(
-            fc_bn_relu(hidden_sizes[i], hidden_sizes[i + 1], use_bn=use_bn))
-    modules.append(nn.Linear(hidden_sizes[-1], out_channels))
-    return nn.Sequential(*modules)
+from utils import Tensor, build_mlps
 
 
 class MLPText2Slot(nn.Module):
@@ -188,64 +164,28 @@ class ObjMLPText2Slot(nn.Module):
                  slot_size: int,
                  hidden_sizes: Tuple[int] = (256, ),
                  use_bn: bool = False,
-                 normalize_slots: bool = False,
-                 random_bg_slot: bool = False,
-                 bg_same_slot: bool = False):
+                 normalize_slots: bool = False):
         super(ObjMLPText2Slot, self).__init__()
         self.in_channels = in_channels
         self.slot_size = slot_size
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.normalize_slots = normalize_slots
-        self.bg_same_slot = bg_same_slot
-
-        # this is for the background slots that don't have predicted embedding
-        if random_bg_slot:
-            self.register_buffer(
-                'slots_mu',
-                nn.init.xavier_uniform_(
-                    torch.zeros((1, self.slot_size)),
-                    gain=nn.init.calculate_gain("linear")))
-            self.register_buffer(
-                'slots_log_sigma',
-                nn.init.xavier_uniform_(
-                    torch.zeros((1, self.slot_size)),
-                    gain=nn.init.calculate_gain("linear")))
-        else:  # trainable
-            self.slots_mu = nn.Parameter(
-                nn.init.xavier_uniform_(
-                    torch.zeros((1, self.slot_size)),
-                    gain=nn.init.calculate_gain("linear")))
-            self.slots_log_sigma = nn.Parameter(
-                nn.init.xavier_uniform_(
-                    torch.zeros((1, self.slot_size)),
-                    gain=nn.init.calculate_gain("linear")))
 
         # simple share-weight MLPs
         self.mlp = build_mlps(
             in_channels, hidden_sizes, slot_size, use_bn=use_bn)
 
-    def forward(self, text_features: Tensor, padding_mask: Tensor):
+    def forward(self, text_features: Tensor):
         """Forward function.
 
         Args:
-            text_features: [K, C], features extracted from sentences
-            padding_mask: [B, num_slots] boolean mask
+            text_features: [B, num_slots, C], features extracted from sentences
+
+        Returns:
+            slots of shape [B, num_slots, slot_size]
         """
-        assert text_features.shape[0] == padding_mask.sum()
-        obj_slots = self.mlp(text_features)
-        pad_num = padding_mask.numel() - text_features.shape[0]
-        if self.bg_same_slot:
-            pad_slots = self.slots_mu + torch.zeros(
-                pad_num, self.slot_size).type_as(self.slots_mu)
-        else:
-            slots_init = torch.randn(pad_num,
-                                     self.slot_size).type_as(self.slots_mu)
-            pad_slots = self.slots_mu + self.slots_log_sigma.exp() * slots_init
-        # do the padding and build final slots
-        bs, num_slots = padding_mask.shape
-        slots = torch.empty((bs, num_slots, self.slot_size)).type_as(obj_slots)
-        slots[padding_mask] = obj_slots
-        slots[~padding_mask] = pad_slots.type_as(obj_slots)
+        assert len(text_features.shape) == 3
+        slots = self.mlp(text_features)
         if self.normalize_slots:
             slots = F.normalize(slots, p=2, dim=-1)
-        return slots
+        return slots, None  # None is for sigma
