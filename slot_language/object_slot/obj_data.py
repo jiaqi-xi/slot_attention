@@ -43,10 +43,18 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         self.pad_text = pad_text
         self.text_num = 1 + self.max_n_objects
 
+    def _rand_another(self, index):
+        num_data = self.num_videos if self.is_video else len(self)
+        another_index = np.random.choice(num_data)
+        return self.__getitem__(another_index)
+
     def __getitem__(self, index: int):
         """Load one video and get only one frame from it"""
         if self.is_video:
-            video = self._get_video(index)  # clip pre-processed video frames
+            try:
+                video = self._get_video(index)  # pre-processed video frames
+            except RuntimeError:
+                return self._rand_another(index)
             # TODO: since in CLEVR, text is the same through entire video
             # TODO: so I can simply repeat and stack them
             raw_text = [self._generate_text(index)] * self.clip_len  # raw
@@ -56,7 +64,10 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
                 text=torch.stack(tokens, dim=0),  # [clip_len, N + 1, C]
                 raw_text=', '.join(raw_text[0]))  # one sentence
 
-        img = self._get_frame(index)  # clip pre-processed img tensor
+        try:
+            img = self._get_frame(index)  # clip pre-processed img tensor
+        except AssertionError:
+            return self._rand_another(index)
         text = self._generate_text(index)  # raw text
         tokens = self._tokenize_text(text)  # tokenize
 
@@ -100,12 +111,13 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
         shuffle_obj: bool = False,
         pad_text: str = 'background',
     ):
-        super().__init__(data_root, train_batch_size, val_batch_size,
-                         clip_transforms, num_workers, max_n_objects)
-
         self.prompt = prompt
         self.shuffle_obj = shuffle_obj
         self.pad_text = pad_text
+        super().__init__(data_root, train_batch_size, val_batch_size,
+                         clip_transforms, num_workers, max_n_objects)
+
+    def _build_dataset(self):
         self.train_dataset = ObjCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
@@ -119,7 +131,7 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
         self.val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_val_images,
-            clip_transforms=self.clip_transforms,
+            clip_transforms=self.val_clip_transforms,
             max_n_objects=self.max_n_objects,
             split='val',
             prompt=self.prompt,
@@ -213,11 +225,12 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
         pad_text: str = 'background',
         sample_clip_num: int = 2,
     ):
+        self.sample_clip_num = sample_clip_num
         super().__init__(data_root, train_batch_size, val_batch_size,
                          clip_transforms, num_workers, max_n_objects, prompt,
                          shuffle_obj, pad_text)
 
-        self.sample_clip_num = sample_clip_num
+    def _build_dataset(self):
         self.train_dataset = ObjRecurCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
@@ -232,7 +245,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
         self.val_dataset = ObjRecurCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_val_images,
-            clip_transforms=self.clip_transforms,
+            clip_transforms=self.val_clip_transforms,
             max_n_objects=self.max_n_objects,
             split='val',
             prompt=self.prompt,
@@ -271,7 +284,10 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
             return super().__getitem__(index)
 
         # load one frame and potentially do horizontal flip
-        img = self._get_frame(index)  # clip pre-processed img tensor
+        try:
+            img = self._get_frame(index)  # clip pre-processed img tensor
+        except AssertionError:
+            return self._rand_another(index)
         if self.flip_img:
             flipped_img = TF.hflip(img)
         else:
@@ -338,11 +354,12 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
         pad_text: str = 'background',
         flip_img: bool = False,
     ):
+        self.flip_img = flip_img
         super().__init__(data_root, train_batch_size, val_batch_size,
                          clip_transforms, num_workers, max_n_objects, prompt,
                          shuffle_obj, pad_text)
 
-        self.flip_img = flip_img
+    def _build_dataset(self):
         self.train_dataset = ObjAugCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
@@ -357,7 +374,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
         self.val_dataset = ObjAugCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_val_images,
-            clip_transforms=self.clip_transforms,
+            clip_transforms=self.val_clip_transforms,
             max_n_objects=self.max_n_objects,
             split='val',
             prompt=self.prompt,

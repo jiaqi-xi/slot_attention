@@ -16,6 +16,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from obj_train import build_slot_attention_model, build_data_transforms, \
     process_ckp, VideoLogCallback, ImageLogCallback
 from obj_data import ObjAugCLEVRVisionLanguageCLIPDataModule
+from cater_data import ObjAugCATERVisionLanguageCLIPDataModule
 from aug_method import ObjAugSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from aug_model import ObjAugSlotAttentionModel, SemPosSepObjAugSlotAttentionModel
 from aug_params import SlotAttentionParams
@@ -26,15 +27,19 @@ from viewpoint_data import ObjAugCLEVRVisionLanguageViewpointDataModule
 
 
 def build_data_module(params: SlotAttentionParams):
-    if '4obj' in params.data_root:
-        assert params.num_slots == 5
-    elif 'viewpoint' in params.data_root:
-        assert params.num_slots == 3
+    if 'viewpoint' in params.data_root:
+        data_module = ObjAugCLEVRVisionLanguageViewpointDataModule
+        if '4obj' in params.data_root:
+            assert params.num_slots == 5
+        else:
+            assert params.num_slots == 3
+    elif 'CATER' in params.data_root:
+        data_module = ObjAugCATERVisionLanguageCLIPDataModule
+        assert params.num_slots == 11
     else:
+        data_module = ObjAugCLEVRVisionLanguageCLIPDataModule
         assert params.num_slots == 7
     clip_transforms = build_data_transforms(params)
-    data_module = ObjAugCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
-        params.data_root else ObjAugCLEVRVisionLanguageCLIPDataModule
     clevr_datamodule = data_module(
         data_root=params.data_root,
         train_batch_size=params.batch_size,

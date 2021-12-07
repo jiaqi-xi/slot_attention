@@ -268,6 +268,7 @@ class ObjSlotAttentionModel(SlotAttentionModel):
 
     def _build_encoder(self):
         if self.use_unet:
+            self.visual_feats_channels = self.enc_channels[1]
             self.encoder = UNet(self.enc_channels[0], self.enc_channels[1:],
                                 self.kernel_size, False, True, True, False)
             self.encoder_pos_embedding = SoftPositionEmbed(

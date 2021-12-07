@@ -96,11 +96,9 @@ def test(clip_model, dataloader, dataset, params: SegParams):
         img = imgs[i]
         pil_img = Image.fromarray(img.astype(np.uint8))
         colored_seg_mask = colored_seg_masks[i]  # [n, n, 3]
-        pil_mask = Image.fromarray(
-            cv2.resize(
-                colored_seg_mask,
-                pil_img.size,
-                interpolation=cv2.INTER_NEAREST))
+        colored_seg_mask = cv2.resize(
+            colored_seg_mask, pil_img.size, interpolation=cv2.INTER_NEAREST)
+        pil_mask = Image.fromarray(colored_seg_mask)
         fig = plt.figure(figsize=(18, 8))
         ax1 = fig.add_subplot(121)
         ax2 = fig.add_subplot(122)
@@ -111,7 +109,7 @@ def test(clip_model, dataloader, dataset, params: SegParams):
             ax2.plot([], [],
                      color=(palette[lbl].astype(np.float32) / 255.).tolist(),
                      label=raw_texts[i][lbl])
-        ax2.legend(bbox_to_anchor=(1, 0.5))
+        ax2.legend(bbox_to_anchor=(1, 0.2))
         fig.savefig(os.path.join(vis_path, f'{i}.png'))
         plt.close(fig)
         print(raw_texts[i], f'segmenting {seg_masks[i].max() + 1} classes')
@@ -134,6 +132,10 @@ def test(clip_model, dataloader, dataset, params: SegParams):
             ax.set_title(raw_texts[i][j])
             blend_img = mask * 0.6 + img * 0.4
             ax.imshow(Image.fromarray(blend_img.astype(np.uint8)))
+        # put the blended image and whole seg_mask
+        ax = fig.add_subplot(248)
+        blend_img = colored_seg_mask.astype(np.float32) * 0.6 + img * 0.4
+        ax.imshow(Image.fromarray(blend_img.astype(np.uint8)))
         fig.savefig(os.path.join(vis_path, f'{i}_probs.png'))
         plt.close(fig)
 

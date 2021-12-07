@@ -23,7 +23,7 @@ def build_data_transforms(params: SlotAttentionParams):
     _, clip_transforms = clip.load(params.clip_arch)
     if not params.use_clip_vision:
         from torchvision.transforms import Compose, Resize, ToTensor, \
-            Normalize, Lambda, CenterCrop
+            Normalize, Lambda, CenterCrop, RandomCrop
         from torchvision.transforms import InterpolationMode
         BICUBIC = InterpolationMode.BICUBIC
 
@@ -42,6 +42,8 @@ def build_data_transforms(params: SlotAttentionParams):
         ]
         if hasattr(params, 'center_crop') and params.center_crop is not None:
             transforms.insert(0, CenterCrop(params.center_crop))
+        elif hasattr(params, 'random_crop') and params.random_crop is not None:
+            transforms.insert(0, RandomCrop(params.random_crop))
         clip_transforms = Compose(transforms)
     return clip_transforms
 

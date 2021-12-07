@@ -1,6 +1,7 @@
 import json
 import os
 import cv2
+import copy
 import numpy as np
 from PIL import Image
 from typing import Callable
@@ -11,6 +12,7 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
+from torchvision.transforms import CenterCrop, RandomCrop, Compose
 
 import clip
 
@@ -62,9 +64,6 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
             assert overfit >= 1
         self.repeat = repeat
 
-        with open(os.path.join('./data/', f'{split}_annos.json'), 'r') as f:
-            self.anno_paths = json.load(f)
-        self.anno_paths.sort()
         self.files, self.annos = self.get_files()
 
         self.num_videos = len(self.files)
@@ -125,9 +124,9 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
         cap = cv2.VideoCapture(image_path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         success, img = cap.read()
+        cap.release()
         assert success, f'read video {image_path} frame {frame_idx} failed!'
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        cap.release()
         # return the CLIP pre-processed image
         return self.clip_transforms(Image.fromarray(img))
 
@@ -240,6 +239,10 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
 
     def get_files(self) -> List[str]:
         """Load the image (video) path and loaded annotations (lists)."""
+        with open(os.path.join('./data/', f'{self.split}_annos.json'),
+                  'r') as f:
+            self.anno_paths = json.load(f)
+        self.anno_paths.sort()
         img_paths, all_annos = [], []
         for i, anno_name in enumerate(self.anno_paths):
             if self.max_num_images is not None and \
@@ -299,7 +302,12 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
         self.data_root = data_root
         self.train_batch_size = train_batch_size
         self.val_batch_size = val_batch_size
+        val_clip_transforms = Compose(copy.deepcopy(clip_transforms.transforms))
+        for i, trans in enumerate(clip_transforms.transforms):
+            if isinstance(trans, RandomCrop):
+                val_clip_transforms.transforms[i] = CenterCrop(trans.size)
         self.clip_transforms = clip_transforms
+        self.val_clip_transforms = val_clip_transforms
         self.max_n_objects = max_n_objects
         self.num_workers = num_workers
         self.num_train_images = num_train_images
@@ -308,7 +316,9 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
         self.fine_grained = fine_grained
         self.separater = separater
         self.overfit = overfit
+        self._build_dataset()
 
+    def _build_dataset(self):
         train_split = 'val' if self.overfit > 0 else 'train'
         self.train_dataset = CLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
@@ -325,7 +335,7 @@ class CLEVRVisionLanguageCLIPDataModule(pl.LightningDataModule):
         self.val_dataset = CLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_val_images,
-            clip_transforms=self.clip_transforms,
+            clip_transforms=self.val_clip_transforms,
             split='val',
             max_n_objects=self.max_n_objects,
             fine_grained=self.fine_grained,

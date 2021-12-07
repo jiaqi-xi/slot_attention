@@ -73,6 +73,7 @@ class SlotAttentionParams:
     normalize_slots: bool = True
 
     # data
+    # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CATER/max2action/"
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video_4obj"
     # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
     data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
@@ -80,7 +81,8 @@ class SlotAttentionParams:
     prompt: str = 'a {color} {shape}'
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
-    center_crop: Tuple[int] = None  # (128, 128)
+    center_crop: Tuple[int] = None  # (192, 192)
+    random_crop: Tuple[int] = None  # (192, 192)
 
     # training settings
     gpus: int = 1
