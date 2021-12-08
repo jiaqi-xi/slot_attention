@@ -4,13 +4,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from obj_utils import get_normalizer
+
 
 class SingleConv(nn.Module):
     """Conv --> BN (potential) --> ReLU"""
 
-    def __init__(self, in_channels, out_channels, kernel_size=3, use_bn=True):
+    def __init__(self, in_channels, out_channels, kernel_size=3, norm=''):
         super().__init__()
 
+        normalizer = get_normalizer(norm, out_channels)
         padding = kernel_size // 2
         self.single_conv = nn.Sequential(
             nn.Conv2d(
@@ -18,14 +21,7 @@ class SingleConv(nn.Module):
                 out_channels,
                 kernel_size=kernel_size,
                 padding=padding),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-        ) if use_bn else nn.Sequential(
-            nn.Conv2d(
-                in_channels,
-                out_channels,
-                kernel_size=kernel_size,
-                padding=padding),
+            normalizer,
             nn.ReLU(inplace=True),
         )
 
@@ -41,15 +37,15 @@ class DoubleConv(nn.Module):
                  out_channels,
                  mid_channels=None,
                  kernel_size=3,
-                 use_bn=True,
+                 norm='',
                  residual=False):
         super().__init__()
 
         if mid_channels is None:
             mid_channels = out_channels
         self.double_conv = nn.Sequential(
-            SingleConv(in_channels, mid_channels, kernel_size, use_bn),
-            SingleConv(mid_channels, out_channels, kernel_size, use_bn),
+            SingleConv(in_channels, mid_channels, kernel_size, norm),
+            SingleConv(mid_channels, out_channels, kernel_size, norm),
         )
         self.residual = residual
 
@@ -70,7 +66,7 @@ class Conv(nn.Module):
                  use_double_conv,
                  mid_channels=None,
                  kernel_size=3,
-                 use_bn=True,
+                 norm='',
                  residual=False):
         super().__init__()
 
@@ -79,9 +75,9 @@ class Conv(nn.Module):
             out_channels,
             mid_channels,
             kernel_size,
-            use_bn=use_bn,
+            norm=norm,
             residual=residual) if use_double_conv else SingleConv(
-                in_channels, out_channels, kernel_size, use_bn=use_bn)
+                in_channels, out_channels, kernel_size, norm=norm)
 
     def forward(self, x):
         return self.conv(x)
@@ -91,7 +87,7 @@ class UNetDown(nn.Module):
     """Downscaling with Pool then Conv"""
 
     def __init__(self, in_channels, out_channels, kernel_size, use_double_conv,
-                 use_maxpool, use_bn):
+                 use_maxpool, norm):
         super().__init__()
 
         self.downsample = nn.MaxPool2d(2) if use_maxpool else nn.Conv2d(
@@ -105,7 +101,7 @@ class UNetDown(nn.Module):
             out_channels,
             use_double_conv,
             kernel_size=kernel_size,
-            use_bn=use_bn)
+            norm=norm)
 
     def forward(self, x):
         x = self.downsample(x)
@@ -117,7 +113,7 @@ class UNetUp(nn.Module):
     """Upscaling then Conv"""
 
     def __init__(self, in_channels, out_channels, kernel_size, use_double_conv,
-                 use_bilinear, use_bn):
+                 use_bilinear, norm):
         super().__init__()
 
         self.upsample = nn.Upsample(
@@ -127,7 +123,7 @@ class UNetUp(nn.Module):
 
         mid_channel = in_channels // 2 if use_bilinear else None
         self.conv = Conv(in_channels, out_channels, use_double_conv,
-                         mid_channel, kernel_size, use_bn)
+                         mid_channel, kernel_size, norm)
 
     def forward(self, x1, x2):
         x1 = self.upsample(x1)
@@ -145,7 +141,7 @@ class UNetUp(nn.Module):
 class UNetEncoder(nn.Module):
 
     def __init__(self, in_channels, channels, kernel_size, use_double_conv,
-                 use_maxpool, use_bn):
+                 use_maxpool, norm):
         super().__init__()
 
         self.channels = list(copy.deepcopy(channels))
@@ -154,12 +150,12 @@ class UNetEncoder(nn.Module):
             channels[0],
             use_double_conv,
             kernel_size=kernel_size,
-            use_bn=use_bn)
+            norm=norm)
         down_convs = [in_conv]
         for i in range(len(channels) - 1):
             down_convs.append(
                 UNetDown(channels[i], channels[i + 1], kernel_size,
-                         use_double_conv, use_maxpool, use_bn))
+                         use_double_conv, use_maxpool, norm))
         self.down_convs = nn.ModuleList(down_convs)
 
     def forward(self, x):
@@ -173,7 +169,7 @@ class UNetEncoder(nn.Module):
 class UNetDecoder(nn.Module):
 
     def __init__(self, enc_channels, channels, kernel_size, use_double_conv,
-                 use_bilinear, use_bn):
+                 use_bilinear, norm):
         super().__init__()
 
         assert len(enc_channels) == len(channels) + 1
@@ -190,7 +186,7 @@ class UNetDecoder(nn.Module):
         for i in range(len(channels)):
             up_convs.append(
                 UNetUp(in_channels[i], channels[i], kernel_size,
-                       use_double_conv, use_bilinear, use_bn))
+                       use_double_conv, use_bilinear, norm))
         self.up_convs = nn.ModuleList(up_convs)
 
     def forward(self, encoder_out):
@@ -204,7 +200,7 @@ class UNetDecoder(nn.Module):
 class UNet(nn.Module):
 
     def __init__(self, in_channels, channels, kernel_size, use_double_conv,
-                 use_maxpool, use_bilinear, use_bn):
+                 use_maxpool, use_bilinear, norm):
         super().__init__()
 
         self.encoder = UNetEncoder(
@@ -213,7 +209,7 @@ class UNet(nn.Module):
             kernel_size,
             use_double_conv=use_double_conv,
             use_maxpool=use_maxpool,
-            use_bn=use_bn)
+            norm=norm)
 
         self.decoder = UNetDecoder(
             self.encoder.channels,
@@ -221,7 +217,7 @@ class UNet(nn.Module):
             kernel_size,
             use_double_conv=use_double_conv,
             use_bilinear=use_bilinear,
-            use_bn=use_bn)
+            norm=norm)
 
     def forward(self, x, return_feats=False):
         feats = self.encoder(x)
@@ -234,7 +230,7 @@ class UNet(nn.Module):
 class UpBlock(nn.Module):
 
     def __init__(self, in_channels, out_channels, kernel_size, use_double_conv,
-                 use_bilinear, use_bn):
+                 use_bilinear, norm):
         super().__init__()
 
         self.upsample = nn.Upsample(
@@ -249,7 +245,7 @@ class UpBlock(nn.Module):
 
         mid_channels = None
         self.conv = Conv(in_channels, out_channels, use_double_conv,
-                         mid_channels, kernel_size, use_bn)
+                         mid_channels, kernel_size, norm)
 
     def forward(self, x):
         x = self.upsample(x)

@@ -66,54 +66,38 @@ def build_text2slot_model(params: SlotAttentionParams):
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
     text2slot_model = build_text2slot_model(params)
-    if params.use_sempos_sep:
-        print('Using SemPosSepObjSlotAttentionModel!')
-        model = SemPosSepObjSlotAttentionModel(
-            clip_model=clip_model,
-            use_clip_vision=params.use_clip_vision,
-            use_clip_text=params.use_text2slot,
-            text2slot_model=text2slot_model,
-            resolution=params.resolution,
+    print('Using SemPosSepObjSlotAttentionModel!')
+    model = SemPosSepObjSlotAttentionModel(
+        clip_model=clip_model,
+        use_clip_vision=params.use_clip_vision,
+        use_clip_text=params.use_text2slot,
+        text2slot_model=text2slot_model,
+        resolution=params.resolution,
+        slot_dict=dict(
             num_slots=params.num_slots,
             num_iterations=params.num_iterations,
             slot_size=params.slot_size,
             slot_mlp_size=params.slot_mlp_size,
+            use_bg_sep_slot=params.use_bg_sep_slot,
+        ),
+        enc_dict=dict(
             out_features=params.out_features,
             kernel_size=params.kernel_size,
             enc_pos_size=params.enc_pos_size,
+            use_unet=params.use_unet,
+            enc_channels=params.enc_channels,
+            enc_resolution=params.enc_resolution,
+            visual_feats_channels=params.clip_vision_channel,
+            enc_norm=params.enc_norm,
+        ),
+        dec_dict=dict(
             dec_pos_size=params.dec_pos_size,
-            use_unet=params.use_unet,
-            enc_channels=params.enc_channels,
             dec_channels=params.dec_channels,
             dec_resolution=params.dec_resolution,
-            use_bg_sep_slot=params.use_bg_sep_slot,
-            enc_resolution=params.enc_resolution,
-            visual_feats_channels=params.clip_vision_channel,
-            use_entropy_loss=params.use_entropy_loss,
-        )
-    else:
-        print('Using ObjSlotAttentionModel!')
-        model = ObjSlotAttentionModel(
-            clip_model=clip_model,
-            use_clip_vision=params.use_clip_vision,
-            use_clip_text=params.use_text2slot,
-            text2slot_model=text2slot_model,
-            resolution=params.resolution,
-            num_slots=params.num_slots,
-            num_iterations=params.num_iterations,
-            slot_size=params.slot_size,
-            slot_mlp_size=params.slot_mlp_size,
-            out_features=params.out_features,
-            kernel_size=params.kernel_size,
-            use_unet=params.use_unet,
-            enc_channels=params.enc_channels,
-            dec_channels=params.dec_channels,
-            dec_resolution=params.dec_resolution,
-            use_bg_sep_slot=params.use_bg_sep_slot,
-            enc_resolution=params.enc_resolution,
-            visual_feats_channels=params.clip_vision_channel,
-            use_entropy_loss=params.use_entropy_loss,
-        )
+            dec_norm=params.dec_norm,
+        ),
+        use_entropy_loss=params.use_entropy_loss,
+    )
     return model
 
 

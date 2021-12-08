@@ -9,31 +9,40 @@ class SlotAttentionParams:
     # model configs
     # TODO: let's start with small img size!
     resolution: Tuple[int, int] = (64, 64)  # since we not using ViT
+
+    # Slot Attention module params
     num_slots: int = 7  # at most 6 obj per image/video
     # dim of slots embedding
     slot_size: int = 128
     num_iterations: int = 2
-    # whether treat bg slot separately
-    use_bg_sep_slot: bool = False
     # MLP hidden size in Slot Attention
     slot_mlp_size: int = 256  # FFN after cross attention
+    # whether treat bg slot separately
+    use_bg_sep_slot: bool = False
+
+    # setting about sem-pos separate model
+    use_sempos_sep: bool = True
+
+    # encoder params
     # UNet as encoder
     use_unet: bool = False
     # Conv encoder-decoder
     out_features: int = 64
-    dec_resolution: Tuple[int, int] = (8, 8)
     kernel_size: int = 5
+    enc_pos_size: int = 64  # number of dims for positional information
     enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64)
+    enc_resolution: Tuple[int, int] = resolution  # image size
+    enc_norm: str = ''
+
+    # decoder params
+    dec_pos_size: int = None  # if is int, then use cat instead of add
     dec_channels: Tuple[int, ...] = (128, 64, 64, 64, 64)
+    dec_resolution: Tuple[int, int] = (8, 8)
+    dec_norm: str = ''
 
     # use self-entropy loss to masks
     use_entropy_loss: bool = False
     entropy_loss_w: float = 1e-3
-
-    # setting about sem-pos separate model
-    use_sempos_sep: bool = True
-    enc_pos_size: int = 64  # number of dims for positional information
-    dec_pos_size: int = None  # if is int, then use cat instead of add
 
     # transformation equivariance loss
     flip_img: bool = True
@@ -61,7 +70,6 @@ class SlotAttentionParams:
     # architecture of CLIP pre-trained model
     use_clip_vision: bool = False
     clip_arch: str = 'ViT-B/32'
-    enc_resolution: Tuple[int, int] = resolution  # image size
     clip_vision_channel: int = 64
     clip_text_channel: int = 512
 

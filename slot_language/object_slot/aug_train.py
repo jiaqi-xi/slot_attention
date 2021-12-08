@@ -61,15 +61,20 @@ def build_aug_slot_attention_model(params: SlotAttentionParams):
         params.use_sempos_sep else ObjAugSlotAttentionModel
     model = model_(
         model=model,
-        use_contrastive_loss=params.use_contrastive_loss,
-        contrastive_mlp=params.contrastive_mlp,
-        contrastive_T=params.contrastive_T,
-        contrastive_normalize=params.contrastive_normalize,
-        contrastive_stop_grad=params.contrastive_stop_grad,
-        use_text_recon_loss=params.use_text_recon_loss,
-        text_recon_mlp=params.text_recon_mlp,
-        text_recon_normalize=params.text_recon_normalize,
-        use_feature_loss=params.use_feature_loss)
+        contrastive_loss_dict=dict(
+            use_contrastive_loss=params.use_contrastive_loss,
+            contrastive_mlp=params.contrastive_mlp,
+            contrastive_T=params.contrastive_T,
+            contrastive_normalize=params.contrastive_normalize,
+            contrastive_stop_grad=params.contrastive_stop_grad,
+        ),
+        text_recon_loss_dict=dict(
+            use_text_recon_loss=params.use_text_recon_loss,
+            text_recon_mlp=params.text_recon_mlp,
+            text_recon_normalize=params.text_recon_normalize,
+        ),
+        feature_loss_dict=dict(use_feature_loss=params.use_feature_loss, ),
+    )
     return model
 
 

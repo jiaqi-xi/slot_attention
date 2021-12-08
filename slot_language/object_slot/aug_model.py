@@ -10,38 +10,45 @@ from obj_utils import build_mlps
 
 class ObjAugSlotAttentionModel(nn.Module):
 
-    def __init__(self,
-                 model: ObjSlotAttentionModel,
-                 eps: float = 1e-6,
-                 use_contrastive_loss: bool = False,
-                 contrastive_mlp: Tuple[int] = (),
-                 contrastive_T: float = 0.1,
-                 contrastive_normalize: bool = True,
-                 contrastive_stop_grad: bool = False,
-                 use_text_recon_loss: bool = False,
-                 text_recon_mlp: Tuple[int] = (64, ),
-                 text_recon_normalize: bool = False,
-                 use_feature_loss: bool = False):
+    def __init__(
+            self,
+            model: ObjSlotAttentionModel,
+            eps: float = 1e-6,
+            contrastive_loss_dict=dict(
+                use_contrastive_loss=False,
+                contrastive_mlp=(),
+                contrastive_T=0.1,
+                contrastive_normalize=True,
+                contrastive_stop_grad=False,
+            ),
+            text_recon_loss_dict=dict(
+                use_text_recon_loss=False,
+                text_recon_mlp=(64, ),
+                text_recon_normalize=False,
+            ),
+            feature_loss_dict=dict(use_feature_loss=False, ),
+    ):
         super().__init__()
 
         self.model = model
         self.eps = eps
 
         # contrastive loss
-        self.use_contrastive_loss = use_contrastive_loss
-        self.contrastive_T = contrastive_T
-        self.contrastive_normalize = contrastive_normalize
-        self.contrastive_stop_grad = contrastive_stop_grad
+        self.use_contrastive_loss = contrastive_loss_dict.use_contrastive_loss
+        self.contrastive_T = contrastive_loss_dict.contrastive_T
+        self.contrastive_normalize = contrastive_loss_dict.contrastive_normalize
+        self.contrastive_stop_grad = contrastive_loss_dict.contrastive_stop_grad
         self.num_slots = self.model.num_slots
         self.slot_size = self.model.slot_size
         # index used for contrastive loss computation
-        if use_contrastive_loss:
+        if self.use_contrastive_loss:
             sample_num = 2 * self.num_slots
             neg_idx = [list(range(sample_num)) for _ in range(sample_num)]
             for idx in range(sample_num):  # remove self and pos pair
                 neg_idx[idx].remove(idx)
                 neg_idx[idx].remove((idx + self.num_slots) % sample_num)
             self.register_buffer('neg_idx', torch.tensor(neg_idx).long())
+            contrastive_mlp = contrastive_loss_dict.contrastive_mlp
             if len(contrastive_mlp) >= 1:
                 self.contrastive_mlp = build_mlps(self.slot_size,
                                                   contrastive_mlp[:-1],
@@ -50,15 +57,16 @@ class ObjAugSlotAttentionModel(nn.Module):
                 self.contrastive_mlp = nn.Identity()
 
         # text reconstruction loss
-        self.use_text_recon_loss = use_text_recon_loss
-        self.text_recon_normalize = text_recon_normalize
+        self.use_text_recon_loss = text_recon_loss_dict.use_text_recon_loss
+        self.text_recon_normalize = text_recon_loss_dict.text_recon_normalize
         self.text_feats_size = self.model.text2slot_model.in_channels
-        if use_text_recon_loss:
-            self.text_recon_mlp = build_mlps(self.slot_size, text_recon_mlp,
-                                             self.text_feats_size, False)
+        if self.use_text_recon_loss:
+            self.text_recon_mlp = build_mlps(
+                self.slot_size, text_recon_loss_dict.text_recon_mlp,
+                self.text_feats_size, False)
 
         # feature loss
-        self.use_feature_loss = use_feature_loss
+        self.use_feature_loss = feature_loss_dict.use_feature_loss
 
     def forward_test(self, data):
         return self.model(dict(img=data['img'], text=data['text']))
@@ -223,6 +231,7 @@ class SemPosSepObjAugSlotAttentionModel(ObjAugSlotAttentionModel):
 
         recon_combined, recons, masks, slots, \
             img_feats, text_feats = self.forward(input)
+        slots, sem_slots, pos_slots = slots
         loss_dict = self.model.calc_train_loss(
             torch.cat([input['img'], input['flipped_img']], dim=0),
             recon_combined, recons, masks, slots, img_feats, text_feats)
@@ -235,7 +244,6 @@ class SemPosSepObjAugSlotAttentionModel(ObjAugSlotAttentionModel):
             masks, is_flipped, is_shuffled, shuffled_idx)
         if self.use_contrastive_loss:
             # we only supervise on the semantic slot embedding
-            slots, sem_slots, pos_slots = slots
             loss_dict['contrastive_loss'] = self.calc_contrastive_loss(
                 sem_slots, is_shuffled, shuffled_idx)
         if self.use_text_recon_loss:
