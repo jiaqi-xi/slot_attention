@@ -5,7 +5,7 @@
 
 #######################################################################
 # An example usage:
-#     GPUS=1 CPUS_PER_TASK=6 MEM_PER_CPU=8 REPEAT=5 ./dup_run_sbatch.sh \
+#     GPUS=1 CPUS_PER_TASK=8 MEM_PER_CPU=6 REPEAT=3 ./dup_run_sbatch.sh \
 #       rtx6000 test-sbatch test.py ./logs/text params.py --fp16
 #######################################################################
 
@@ -22,11 +22,12 @@ PY_FILE=$3
 LOG_DIR=$4
 PARAMS=$5
 
-for repeat_idx in {1..$REPEAT}
+for repeat_idx in $(seq 1 $REPEAT)
 do
     params="dup${repeat_idx}-${PARAMS}"
     cp $PARAMS $params
     job_name="dup${repeat_idx}-${JOB_NAME}"
     log_dir="${LOG_DIR}-dup${repeat_idx}"
+    echo "./sbatch_run.sh $PARTITION $job_name $PY_FILE $log_dir --params $params $PY_ARGS"
     ./sbatch_run.sh $PARTITION $job_name $PY_FILE $log_dir --params $params $PY_ARGS
 done

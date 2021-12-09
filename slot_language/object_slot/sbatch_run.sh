@@ -6,7 +6,7 @@
 
 #######################################################################
 # An example usage:
-#     GPUS=1 CPUS_PER_TASK=5 MEM_PER_CPU=6 ./sbatch_run.sh rtx6000 test-sbatch \
+#     GPUS=1 CPUS_PER_TASK=8 MEM_PER_CPU=6 ./sbatch_run.sh rtx6000 test-sbatch \
 #       test.py ./logs --params params.py
 #######################################################################
 
