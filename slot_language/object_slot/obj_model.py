@@ -3,10 +3,10 @@ from typing import Tuple
 
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 from clip import CLIP
 from unet import UNet
+from resnet import StackedResBlock
 from obj_utils import SepLinear, SepLayerNorm, SepGRUCell
 
 sys.path.append('../')
@@ -222,6 +222,7 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             out_features=64,
             kernel_size=5,
             use_unet=False,
+            use_resnet=False,
             enc_channels=(3, 64, 64, 64, 64),
             enc_resolution=(7, 7),  # output res of encoder
             visual_feats_channels=512,
@@ -234,10 +235,11 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         ),
         use_entropy_loss: bool = False,
     ):
-        use_unet = enc_dict['use_unet']
-        if use_unet:
+        self.use_unet = enc_dict['use_unet']
+        self.use_resnet = enc_dict['use_resnet']
+        assert not (self.use_resnet and self.use_unet)
+        if self.use_unet or self.use_resnet:
             assert not use_clip_vision
-        self.use_unet = use_unet
 
         super().__init__(
             clip_model,
@@ -268,6 +270,7 @@ class ObjSlotAttentionModel(SlotAttentionModel):
 
     def _build_encoder(self):
         if self.use_unet:
+            print('Use UNet as encoder!')
             self.visual_feats_channels = self.enc_channels[1]
             self.encoder = UNet(
                 self.enc_channels[0],
@@ -285,6 +288,13 @@ class ObjSlotAttentionModel(SlotAttentionModel):
                 nn.ReLU(),
                 nn.Linear(self.out_features, self.out_features),
             )
+        elif self.use_resnet:
+            print('Use ResNet as encoder!')
+            self.encoder = StackedResBlock(
+                self.enc_channels[0],
+                self.enc_channels[1:],
+                self.kernel_size,
+                norm=self.enc_norm)
         else:
             super()._build_encoder()
 
@@ -331,6 +341,7 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
             kernel_size=5,
             enc_pos_size=64,
             use_unet=False,
+            use_resnet=False,
             enc_channels=(3, 64, 64, 64, 64),
             enc_resolution=(7, 7),  # output res of encoder
             visual_feats_channels=512,  # output channel of encoder

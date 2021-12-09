@@ -25,6 +25,8 @@ class SlotAttentionParams:
     # encoder params
     # UNet as encoder
     use_unet: bool = False
+    # StackedResBlocks as encoder
+    use_resnet: bool = False
     # Conv encoder-decoder
     out_features: int = 64
     kernel_size: int = 5

@@ -6,14 +6,15 @@
 
 #######################################################################
 # An example usage:
-#     GPUS=1 CPUS_PER_TASK=5 ./run.sh rtx6000 test-sbatch test.py \
-#         ./logs '--params params.py'
+#     GPUS=1 CPUS_PER_TASK=5 MEM_PER_CPU=6 ./sbatch_run.sh rtx6000 test-sbatch \
+#       test.py ./logs --params params.py
 #######################################################################
 
 # read args from command line
 GPUS=${GPUS:-1}
 CPUS_PER_TASK=${CPUS_PER_TASK:-5}
 MEM_PER_CPU=${MEM_PER_CPU:-8}
+
 PY_ARGS=${@:5}
 PARTITION=$1
 JOB_NAME=$2

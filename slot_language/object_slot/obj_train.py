@@ -90,6 +90,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
             kernel_size=params.kernel_size,
             enc_pos_size=params.enc_pos_size,
             use_unet=params.use_unet,
+            use_resnet=params.use_resnet,
             enc_channels=params.enc_channels,
             enc_resolution=params.enc_resolution,
             visual_feats_channels=params.clip_vision_channel,
@@ -158,10 +159,11 @@ def main(params: Optional[SlotAttentionParams] = None):
     if os.path.exists(ckp_path):
         ckp_files = os.listdir(ckp_path)
         ckp_files = [ckp for ckp in ckp_files if ckp.startswith('CLEVRVideo')]
-        step_num = [int(ckp[26:32]) for ckp in ckp_files]
-        last_ckp = ckp_files[np.argmax(step_num)]
-        print(f'INFO: automatically detect checkpoint {last_ckp}')
-        args.weight = os.path.join(ckp_path, last_ckp)
+        if ckp_files:
+            step_num = [int(ckp[26:32]) for ckp in ckp_files]
+            last_ckp = ckp_files[np.argmax(step_num)]
+            print(f'INFO: automatically detect checkpoint {last_ckp}')
+            args.weight = os.path.join(ckp_path, last_ckp)
 
     process_ckp(args.weight)  # enable mid-epoch resuming
     trainer = Trainer(
