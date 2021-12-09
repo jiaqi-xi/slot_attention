@@ -14,19 +14,19 @@ class ObjAugSlotAttentionModel(nn.Module):
             self,
             model: ObjSlotAttentionModel,
             eps: float = 1e-6,
-            contrastive_loss_dict=dict(
+            contrastive_dict=dict(
                 use_contrastive_loss=False,
                 contrastive_mlp=(),
                 contrastive_T=0.1,
                 contrastive_normalize=True,
                 contrastive_stop_grad=False,
             ),
-            text_recon_loss_dict=dict(
+            text_recon_dict=dict(
                 use_text_recon_loss=False,
                 text_recon_mlp=(64, ),
                 text_recon_normalize=False,
             ),
-            feature_loss_dict=dict(use_feature_loss=False, ),
+            feature_dict=dict(use_feature_loss=False, ),
     ):
         super().__init__()
 
@@ -34,10 +34,10 @@ class ObjAugSlotAttentionModel(nn.Module):
         self.eps = eps
 
         # contrastive loss
-        self.use_contrastive_loss = contrastive_loss_dict.use_contrastive_loss
-        self.contrastive_T = contrastive_loss_dict.contrastive_T
-        self.contrastive_normalize = contrastive_loss_dict.contrastive_normalize
-        self.contrastive_stop_grad = contrastive_loss_dict.contrastive_stop_grad
+        self.use_contrastive_loss = contrastive_dict['use_contrastive_loss']
+        self.contrastive_T = contrastive_dict['contrastive_T']
+        self.contrastive_normalize = contrastive_dict['contrastive_normalize']
+        self.contrastive_stop_grad = contrastive_dict['contrastive_stop_grad']
         self.num_slots = self.model.num_slots
         self.slot_size = self.model.slot_size
         # index used for contrastive loss computation
@@ -48,7 +48,7 @@ class ObjAugSlotAttentionModel(nn.Module):
                 neg_idx[idx].remove(idx)
                 neg_idx[idx].remove((idx + self.num_slots) % sample_num)
             self.register_buffer('neg_idx', torch.tensor(neg_idx).long())
-            contrastive_mlp = contrastive_loss_dict.contrastive_mlp
+            contrastive_mlp = contrastive_dict['contrastive_mlp']
             if len(contrastive_mlp) >= 1:
                 self.contrastive_mlp = build_mlps(self.slot_size,
                                                   contrastive_mlp[:-1],
@@ -57,16 +57,16 @@ class ObjAugSlotAttentionModel(nn.Module):
                 self.contrastive_mlp = nn.Identity()
 
         # text reconstruction loss
-        self.use_text_recon_loss = text_recon_loss_dict.use_text_recon_loss
-        self.text_recon_normalize = text_recon_loss_dict.text_recon_normalize
+        self.use_text_recon_loss = text_recon_dict['use_text_recon_loss']
+        self.text_recon_normalize = text_recon_dict['text_recon_normalize']
         self.text_feats_size = self.model.text2slot_model.in_channels
         if self.use_text_recon_loss:
             self.text_recon_mlp = build_mlps(
-                self.slot_size, text_recon_loss_dict.text_recon_mlp,
+                self.slot_size, text_recon_dict['text_recon_mlp'],
                 self.text_feats_size, False)
 
         # feature loss
-        self.use_feature_loss = feature_loss_dict.use_feature_loss
+        self.use_feature_loss = feature_dict['use_feature_loss']
 
     def forward_test(self, data):
         return self.model(dict(img=data['img'], text=data['text']))

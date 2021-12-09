@@ -61,19 +61,19 @@ def build_aug_slot_attention_model(params: SlotAttentionParams):
         params.use_sempos_sep else ObjAugSlotAttentionModel
     model = model_(
         model=model,
-        contrastive_loss_dict=dict(
+        contrastive_dict=dict(
             use_contrastive_loss=params.use_contrastive_loss,
             contrastive_mlp=params.contrastive_mlp,
             contrastive_T=params.contrastive_T,
             contrastive_normalize=params.contrastive_normalize,
             contrastive_stop_grad=params.contrastive_stop_grad,
         ),
-        text_recon_loss_dict=dict(
+        text_recon_dict=dict(
             use_text_recon_loss=params.use_text_recon_loss,
             text_recon_mlp=params.text_recon_mlp,
             text_recon_normalize=params.text_recon_normalize,
         ),
-        feature_loss_dict=dict(use_feature_loss=params.use_feature_loss, ),
+        feature_dict=dict(use_feature_loss=params.use_feature_loss, ),
     )
     return model
 
@@ -114,8 +114,8 @@ def main(params: Optional[SlotAttentionParams] = None):
         id=logger_name)  # we assume only run one exp per one params setting
 
     # saves a file like: 'path/to/ckp/CLEVRVideo-001-100000-val=0.0032.ckpt'
-    ckp_path = "./checkpoint/" \
-        f"{args.params + '-fp16' if args.fp16 else args.params}/{SLURM_JOB_ID}"
+    # TODO: save ckp in temp folder '/checkpoint/ziyiwu/xxx/'
+    ckp_path = f"/checkpoint/ziyiwu/{SLURM_JOB_ID}"
     ckp_name = "CLEVRVideo-{epoch:03d}-{step:06d}-val_{val_recon_loss:.4f}"
     checkpoint_callback = ModelCheckpoint(
         monitor="val_recon_loss",

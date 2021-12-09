@@ -143,6 +143,7 @@ class CLEVRVisionLanguageCLIPDataset(Dataset):
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 img_list.append(img)
         cap.release()
+        print(f'Loading video: {image_path}')
         return torch.stack(
             [self.clip_transforms(Image.fromarray(img)) for img in img_list],
             dim=0)

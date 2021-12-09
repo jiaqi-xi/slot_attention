@@ -357,22 +357,22 @@ class SlotAttentionModel(nn.Module):
         super().__init__()
         self.resolution = resolution
 
-        self.num_slots = slot_dict.num_slots
-        self.num_iterations = slot_dict.num_iterations
-        self.slot_size = slot_dict.slot_size
-        self.slot_mlp_size = slot_dict.slot_mlp_size
-        self.use_bg_sep_slot = slot_dict.use_bg_sep_slot
+        self.num_slots = slot_dict['num_slots']
+        self.num_iterations = slot_dict['num_iterations']
+        self.slot_size = slot_dict['slot_size']
+        self.slot_mlp_size = slot_dict['slot_mlp_size']
+        self.use_bg_sep_slot = slot_dict['use_bg_sep_slot']
 
-        self.out_features = enc_dict.out_features
-        self.kernel_size = enc_dict.kernel_size
-        self.enc_channels = enc_dict.enc_channels
-        self.enc_resolution = enc_dict.enc_resolution
-        self.visual_feats_channels = enc_dict.visual_feats_channels
-        self.enc_norm = enc_dict.enc_norm
+        self.out_features = enc_dict['out_features']
+        self.kernel_size = enc_dict['kernel_size']
+        self.enc_channels = enc_dict['enc_channels']
+        self.enc_resolution = enc_dict['enc_resolution']
+        self.visual_feats_channels = enc_dict['visual_feats_channels']
+        self.enc_norm = enc_dict['enc_norm']
 
-        self.dec_channels = dec_dict.dec_channels
-        self.dec_resolution = dec_dict.dec_resolution
-        self.dec_norm = dec_dict.dec_norm
+        self.dec_channels = dec_dict['dec_channels']
+        self.dec_resolution = dec_dict['dec_resolution']
+        self.dec_norm = dec_dict['dec_norm']
 
         self.use_word_set = use_word_set
         self.use_padding_mask = use_padding_mask
@@ -386,7 +386,7 @@ class SlotAttentionModel(nn.Module):
         if not self.use_clip_vision:
             self.enc_resolution = self.resolution
             self.visual_feats_channels = self.enc_channels[-1]
-            self.clip_model.visual = None
+            # self.clip_model.visual = None
 
         # Text2Slot that generates slot embedding from text features
         if self.use_clip_text:

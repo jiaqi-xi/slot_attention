@@ -14,6 +14,7 @@ from obj_data import ObjCLEVRVisionLanguageCLIPDataModule
 from obj_method import ObjSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from obj_model import ObjSlotAttentionModel, SemPosSepObjSlotAttentionModel
 from obj_params import SlotAttentionParams
+from cater_data import ObjCATERVisionLanguageCLIPDataModule
 
 sys.path.append('../')
 
@@ -27,15 +28,19 @@ from viewpoint_data import ObjCLEVRVisionLanguageViewpointDataModule
 
 
 def build_data_module(params: SlotAttentionParams):
-    if '4obj' in params.data_root:
-        assert params.num_slots == 5
-    elif 'viewpoint' in params.data_root:
-        assert params.num_slots == 3
+    if 'viewpoint' in params.data_root:
+        data_module = ObjCLEVRVisionLanguageViewpointDataModule
+        if '4obj' in params.data_root:
+            assert params.num_slots == 5
+        else:
+            assert params.num_slots == 3
+    elif 'CATER' in params.data_root:
+        data_module = ObjCATERVisionLanguageCLIPDataModule
+        assert params.num_slots == 11
     else:
+        data_module = ObjCLEVRVisionLanguageCLIPDataModule
         assert params.num_slots == 7
     clip_transforms = build_data_transforms(params)
-    data_module = ObjCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
-        params.data_root else ObjCLEVRVisionLanguageCLIPDataModule
     clevr_datamodule = data_module(
         data_root=params.data_root,
         train_batch_size=params.batch_size,
@@ -88,13 +93,13 @@ def build_slot_attention_model(params: SlotAttentionParams):
             enc_channels=params.enc_channels,
             enc_resolution=params.enc_resolution,
             visual_feats_channels=params.clip_vision_channel,
-            enc_norm=params.enc_norm,
+            enc_norm=params.enc_norm if hasattr(params, 'enc_norm') else '',
         ),
         dec_dict=dict(
             dec_pos_size=params.dec_pos_size,
             dec_channels=params.dec_channels,
             dec_resolution=params.dec_resolution,
-            dec_norm=params.dec_norm,
+            dec_norm=params.dec_norm if hasattr(params, 'dec_norm') else '',
         ),
         use_entropy_loss=params.use_entropy_loss,
     )
@@ -137,8 +142,8 @@ def main(params: Optional[SlotAttentionParams] = None):
         id=logger_name)  # we assume only run one exp per one params setting
 
     # saves a file like: 'path/to/ckp/CLEVRVideo-001-100000-val=0.0032.ckpt'
-    ckp_path = "./checkpoint/" \
-        f"{args.params + '-fp16' if args.fp16 else args.params}/{SLURM_JOB_ID}"
+    # TODO: save ckp in temp folder '/checkpoint/ziyiwu/xxx/'
+    ckp_path = f"/checkpoint/ziyiwu/{SLURM_JOB_ID}"
     ckp_name = "CLEVRVideo-{epoch:03d}-{step:06d}-val_{val_recon_loss:.4f}"
     checkpoint_callback = ModelCheckpoint(
         monitor="val_recon_loss",

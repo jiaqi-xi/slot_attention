@@ -234,7 +234,7 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         ),
         use_entropy_loss: bool = False,
     ):
-        use_unet = enc_dict.use_unet
+        use_unet = enc_dict['use_unet']
         if use_unet:
             assert not use_clip_vision
         self.use_unet = use_unet
@@ -344,8 +344,8 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         ),
         use_entropy_loss: bool = False,
     ):
-        self.enc_pos_size = enc_dict.enc_pos_size
-        self.dec_pos_size = dec_dict.dec_pos_size
+        self.enc_pos_size = enc_dict['enc_pos_size']
+        self.dec_pos_size = dec_dict['dec_pos_size']
 
         super().__init__(
             clip_model,

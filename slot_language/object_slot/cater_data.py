@@ -1,5 +1,7 @@
 import os
+import copy
 import json
+import numpy as np
 from typing import Callable, List
 from typing import Optional
 
@@ -20,6 +22,8 @@ class ObjCATERVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
                  is_video: bool = False,
                  shuffle_obj: bool = False,
                  pad_text: str = 'background'):
+        self.cater_subset = 'cater_cameramotion' if \
+            'cameramotion' in data_root else 'cater'
         super().__init__(
             data_root,
             max_num_images,
@@ -32,10 +36,30 @@ class ObjCATERVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
             shuffle_obj=shuffle_obj,
             pad_text=pad_text)
 
+    def _generate_text(self, index: int):
+        """Generate text descriptions of each object in the scene."""
+        img_idx = self._get_idx(index)[0]
+        anno = self.annos[img_idx]
+        colors = [obj['color'] for obj in anno['objects']]
+        shapes = [obj['shape'] for obj in anno['objects']]
+        sizes = [obj['size'] for obj in anno['objects']]
+        # e.g. 'a large red cone'
+        texts = [
+            self.prompt.format(size=size, color=color, shape=shape)
+            for size, color, shape in zip(sizes, colors, shapes)
+        ]
+        # pad with some special texts, e.g. 'background'
+        texts = texts + [self.pad_text] * (self.text_num - len(texts))
+        # shuffle the order of objects
+        if self.split == 'train' and self.shuffle_obj:
+            np.random.shuffle(texts)
+        return texts
+
     def get_files(self) -> List[str]:
         """Load the image (video) path and loaded annotations (lists)."""
         with open(
-                os.path.join('./data/', f'cater_{self.split}_annos.json'),
+                os.path.join('./data/',
+                             f'{self.cater_subset}_{self.split}_annos.json'),
                 'r') as f:
             self.anno_paths = json.load(f)
         self.anno_paths.sort()
@@ -117,6 +141,8 @@ class ObjAugCATERVisionLanguageCLIPDataset(ObjAugCLEVRVisionLanguageCLIPDataset
                  shuffle_obj: bool = False,
                  pad_text: str = 'background',
                  flip_img: bool = False):
+        self.cater_subset = 'cater_cameramotion' if \
+            'cameramotion' in data_root else 'cater'
         super().__init__(
             data_root,
             max_num_images,
@@ -130,10 +156,35 @@ class ObjAugCATERVisionLanguageCLIPDataset(ObjAugCLEVRVisionLanguageCLIPDataset
             pad_text=pad_text,
             flip_img=flip_img)
 
+    def _generate_text(self, index: int):
+        """Generate text descriptions of each object in the scene."""
+        img_idx = self._get_idx(index)[0]
+        anno = self.annos[img_idx]
+        colors = [obj['color'] for obj in anno['objects']]
+        shapes = [obj['shape'] for obj in anno['objects']]
+        sizes = [obj['size'] for obj in anno['objects']]
+        texts = [
+            self.prompt.format(size=size, color=color, shape=shape)
+            for size, color, shape in zip(sizes, colors, shapes)
+        ]
+        # pad with some special texts, e.g. 'background'
+        texts = texts + [self.pad_text] * (self.text_num - len(texts))
+        # shuffle the order of objects
+        if self.split == 'train':
+            idx = np.arange(len(texts))
+            if self.shuffle_obj:
+                np.random.shuffle(idx)
+                shuffled_texts = [texts[i] for i in idx]
+            else:
+                shuffled_texts = copy.deepcopy(texts)
+            return texts, shuffled_texts, idx
+        return texts
+
     def get_files(self) -> List[str]:
         """Load the image (video) path and loaded annotations (lists)."""
         with open(
-                os.path.join('./data/', f'cater_{self.split}_annos.json'),
+                os.path.join('./data/',
+                             f'{self.cater_subset}_{self.split}_annos.json'),
                 'r') as f:
             self.anno_paths = json.load(f)
         self.anno_paths.sort()
