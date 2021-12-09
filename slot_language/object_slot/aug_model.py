@@ -90,7 +90,7 @@ class ObjAugSlotAttentionModel(nn.Module):
         assert data['is_flipped'][0].item() or data['is_shuffled'][0].item()
         cat_img = torch.cat([data['img'], data['flipped_img']], dim=0)
         text, shuffled_text = data['text'], data['shuffled_text']
-        if isinstance(text, dict):
+        if not isinstance(text, torch.Tensor):
             cat_text = {
                 k: torch.cat([text[k], shuffled_text[k]], dim=0)
                 for k in text.keys()

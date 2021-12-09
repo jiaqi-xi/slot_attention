@@ -393,9 +393,12 @@ class SlotAttentionModel(nn.Module):
         if text_encoder:
             # encode text features, so need text2slot to convert to slot init
             assert text2slot_model is not None
-            if text_encoder.lower() != 'clip':
-                print(f'Using {text_encoder} from transformers lib')
+            if text_encoder != 'clip':
+                print(f'Using {text_encoder} model from transformers lib')
                 self.text_encoder = AutoModel.from_pretrained(text_encoder)
+                # freeze BERT
+                for p in self.text_encoder.parameters():
+                    p.requires_grad = False
         self.text2slot_model = text2slot_model
 
         # extra loss besides reconstruction loss

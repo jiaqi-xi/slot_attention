@@ -77,7 +77,8 @@ def build_slot_attention_model(params: SlotAttentionParams):
     model = SemPosSepObjSlotAttentionModel(
         clip_model=clip_model,
         use_clip_vision=params.use_clip_vision,
-        text_encoder=params.text_encoder,
+        text_encoder=params.text_encoder
+        if hasattr(params, 'text_encoder') else 'clip',
         text2slot_model=text2slot_model,
         resolution=params.resolution,
         slot_dict=dict(

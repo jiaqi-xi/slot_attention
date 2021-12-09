@@ -86,9 +86,11 @@ class SlotAttentionVideoLanguageMethod(pl.LightningModule):
             video, text, raw_text = \
                 batch['video'], batch['text'], batch['raw_text']
             all_texts.append(raw_text)
-            batch = dict(img=video, text=text)
-            if self.params.gpus > 0:
-                batch = {k: v.to(self.device) for k, v in batch.items()}
+            if not isinstance(text, torch.Tensor):
+                text = {k: v.to(self.device) for k, v in text.items()}
+            else:
+                text = text.to(self.device)
+            batch = dict(img=video.to(self.device), text=text)
             recon_combined, recons, masks, slots = self.model.forward(batch)
             # combine images in a nice way so we can display all outputs in one grid, output rescaled to be between 0 and 1
             out = to_rgb_from_tensor(

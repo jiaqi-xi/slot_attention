@@ -308,7 +308,7 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             # not generating slots
             return None, None, None
         # we treat each obj as batch dim and get global text (for each phrase)
-        if self.text_encoder.lower() == 'clip':
+        if self.text_encoder == 'clip':
             bs = tokens.shape[0]
             assert tokens.shape[1] == self.num_slots
             text_features = self.clip_model.encode_text(

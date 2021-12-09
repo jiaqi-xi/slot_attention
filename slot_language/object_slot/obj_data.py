@@ -46,8 +46,8 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         self.text_num = 1 + self.max_n_objects
 
         self.tokenizer = tokenizer
-        if tokenizer and tokenizer.lower() != 'clip':
-            print(f'Using {tokenizer} from transformers lib')
+        if tokenizer and tokenizer != 'clip':
+            print(f'Using {tokenizer} tokenizer from transformers lib')
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer)
 
     def _rand_another(self, index):
@@ -66,9 +66,17 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
             # TODO: so I can simply repeat and stack them
             raw_text = [self._generate_text(index)] * self.clip_len  # raw
             tokens = [self._tokenize_text(text) for text in raw_text]
+            if not isinstance(tokens[0], torch.Tensor):
+                tokens = {
+                    k: torch.stack([tokens[i][k] for i in range(len(tokens))],
+                                   dim=0)
+                    for k in tokens[0].keys()
+                }
+            else:
+                tokens = torch.stack(tokens, dim=0)
             return dict(
                 video=video,  # [clip_len, C, H, W]
-                text=torch.stack(tokens, dim=0),  # [clip_len, N + 1, C]
+                text=tokens,  # [clip_len, N + 1, C]
                 raw_text=', '.join(raw_text[0]))  # one sentence
 
         try:
@@ -86,7 +94,12 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         if self.tokenizer == 'clip':
             tokens = clip.tokenize(texts)  # [N + 1, C]
         else:
-            tokens = self.tokenizer(texts, return_tensors='pt', padding=True)
+            tokens = self.tokenizer(
+                texts,
+                return_tensors='pt',
+                padding='max_length',
+                max_length=20)  # just pad to a large length
+            assert not tokens['attention_mask'].all(), 'pad length not enough!'
         return tokens
 
     def _generate_text(self, index: int):

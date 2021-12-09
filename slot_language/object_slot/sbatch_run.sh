@@ -45,7 +45,7 @@ echo "#!/bin/bash
 #SBATCH --qos=normal                                 # for 'high' and 'deadline' QoS, refer to https://support.vectorinstitute.ai/AboutVaughan2
 
 # link /checkpoint to current folder
-# ln -sfn /checkpoint/\$USER/\$SLURM_JOB_ID \$PWD/checkpoint
+ln -sfn /checkpoint/\$USER/\$SLURM_JOB_ID $LOG_DIR
 
 # log some necessary environment params
 echo \$SLURM_JOB_ID >> $LOG_FILE                      # log the job id
