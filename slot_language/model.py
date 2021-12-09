@@ -3,6 +3,7 @@ from typing import Tuple
 import torch
 from torch import nn
 from torch.nn import functional as F
+from transformers import AutoModel
 
 from clip import CLIP
 from utils import Tensor, assert_shape, build_grid, conv_transpose_out_shape, \
@@ -327,7 +328,7 @@ class SlotAttentionModel(nn.Module):
         self,
         clip_model: CLIP,
         use_clip_vision: bool,
-        use_clip_text: bool,
+        text_encoder: str,  # '' or 'clip' or a name from transformers lib
         text2slot_model: nn.Module,  # if None, then don't use it here
         resolution: Tuple[int, int],
         slot_dict=dict(
@@ -382,15 +383,19 @@ class SlotAttentionModel(nn.Module):
         for p in self.clip_model.parameters():
             p.requires_grad = False
         self.use_clip_vision = use_clip_vision
-        self.use_clip_text = use_clip_text
         if not self.use_clip_vision:
             self.enc_resolution = self.resolution
             self.visual_feats_channels = self.enc_channels[-1]
             # self.clip_model.visual = None
 
         # Text2Slot that generates slot embedding from text features
-        if self.use_clip_text:
+        self.text_encoder = text_encoder
+        if text_encoder:
+            # encode text features, so need text2slot to convert to slot init
             assert text2slot_model is not None
+            if text_encoder.lower() != 'clip':
+                print(f'Using {text_encoder} from transformers lib')
+                self.text_encoder = AutoModel.from_pretrained(text_encoder)
         self.text2slot_model = text2slot_model
 
         # extra loss besides reconstruction loss
@@ -495,21 +500,26 @@ class SlotAttentionModel(nn.Module):
 
     def _get_slot_embedding(self, text):
         """Encode text, generate slot embeddings."""
-        if not self.use_clip_text:
+        if not self.text_encoder:
             # not generating slots
             return None, None
-        text_features = self.clip_model.encode_text(
-            text,
-            lin_proj=False,
-            per_token_emb=self.use_word_set,
-            return_mask=self.use_padding_mask)  # BC or BLC + padding mask
-        if self.use_padding_mask:
-            text_features, padding_mask = text_features[0].type(self.dtype), \
-                text_features[1].type(self.dtype)
-            text_features = dict(
-                text_features=text_features, padding_mask=padding_mask)
+        if self.text_encoder == 'clip':
+            text_features = self.clip_model.encode_text(
+                text,
+                lin_proj=False,
+                per_token_emb=self.use_word_set,
+                return_mask=self.use_padding_mask)  # BC or BLC + padding mask
+            if self.use_padding_mask:
+                text_features, padding_mask = text_features[0].type(
+                    self.dtype), text_features[1].type(self.dtype)
+                text_features = dict(
+                    text_features=text_features, padding_mask=padding_mask)
+            else:
+                text_features = text_features.type(self.dtype)
         else:
-            text_features = text_features.type(self.dtype)
+            text_features = self.text_encoder(
+                **text,
+                return_dict=True)['last_hidden_state'][:, 0].type(self.dtype)
         slot_mu, slot_log_sigma = self.text2slot_model(text_features)
         return slot_mu, slot_log_sigma, text_features
 

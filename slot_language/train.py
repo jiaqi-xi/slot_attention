@@ -104,7 +104,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
     model = SlotAttentionModel(
         clip_model=clip_model,
         use_clip_vision=params.use_clip_vision,
-        use_clip_text=params.use_text2slot,
+        text_encoder=params.text_encoder,
         text2slot_model=text2slot_model,
         resolution=params.resolution,
         slot_dict=dict(

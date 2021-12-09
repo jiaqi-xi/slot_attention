@@ -47,6 +47,8 @@ def build_data_module(params: SlotAttentionParams):
         val_batch_size=params.val_batch_size,
         clip_transforms=clip_transforms,
         num_workers=params.num_workers,
+        tokenizer=params.text_encoder
+        if hasattr(params, 'text_encoder') else 'clip',
         max_n_objects=params.num_slots - 1,
         prompt=params.prompt,
         shuffle_obj=params.shuffle_obj,
@@ -75,7 +77,7 @@ def build_slot_attention_model(params: SlotAttentionParams):
     model = SemPosSepObjSlotAttentionModel(
         clip_model=clip_model,
         use_clip_vision=params.use_clip_vision,
-        use_clip_text=params.use_text2slot,
+        text_encoder=params.text_encoder,
         text2slot_model=text2slot_model,
         resolution=params.resolution,
         slot_dict=dict(
@@ -90,7 +92,8 @@ def build_slot_attention_model(params: SlotAttentionParams):
             kernel_size=params.kernel_size,
             enc_pos_size=params.enc_pos_size,
             use_unet=params.use_unet,
-            use_resnet=params.use_resnet,
+            use_resnet=params.use_resnet
+            if hasattr(params, 'use_resnet') else False,
             enc_channels=params.enc_channels,
             enc_resolution=params.enc_resolution,
             visual_feats_channels=params.clip_vision_channel,

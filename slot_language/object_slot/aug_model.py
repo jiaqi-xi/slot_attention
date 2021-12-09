@@ -61,9 +61,9 @@ class ObjAugSlotAttentionModel(nn.Module):
         self.text_recon_normalize = text_recon_dict['text_recon_normalize']
         self.text_feats_size = self.model.text2slot_model.in_channels
         if self.use_text_recon_loss:
-            self.text_recon_mlp = build_mlps(
-                self.slot_size, text_recon_dict['text_recon_mlp'],
-                self.text_feats_size, False)
+            self.text_recon_mlp = build_mlps(self.slot_size,
+                                             text_recon_dict['text_recon_mlp'],
+                                             self.text_feats_size, False)
 
         # feature loss
         self.use_feature_loss = feature_dict['use_feature_loss']
@@ -88,9 +88,16 @@ class ObjAugSlotAttentionModel(nn.Module):
 
         # at least one augmentation is applied
         assert data['is_flipped'][0].item() or data['is_shuffled'][0].item()
-        x = dict(
-            img=torch.cat([data['img'], data['flipped_img']], dim=0),
-            text=torch.cat([data['text'], data['shuffled_text']], dim=0))
+        cat_img = torch.cat([data['img'], data['flipped_img']], dim=0)
+        text, shuffled_text = data['text'], data['shuffled_text']
+        if isinstance(text, dict):
+            cat_text = {
+                k: torch.cat([text[k], shuffled_text[k]], dim=0)
+                for k in text.keys()
+            }
+        else:
+            cat_text = torch.cat([text, shuffled_text], dim=0)
+        x = dict(img=cat_img, text=cat_text)
         recon_combined, recons, masks, slots, \
             img_feats, text_feats = self.model(x)
 

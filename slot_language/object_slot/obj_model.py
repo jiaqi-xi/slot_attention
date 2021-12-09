@@ -208,7 +208,7 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         self,
         clip_model: CLIP,
         use_clip_vision: bool,
-        use_clip_text: bool,
+        text_encoder: str,  # '' or 'clip' or a name from transformers lib
         text2slot_model: nn.Module,
         resolution: Tuple[int, int],
         slot_dict=dict(
@@ -244,7 +244,7 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         super().__init__(
             clip_model,
             use_clip_vision,
-            use_clip_text,
+            text_encoder,
             text2slot_model,
             resolution,
             slot_dict=slot_dict,
@@ -304,18 +304,28 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         Args:
             tokens: [B, N, C]
         """
-        if not self.use_clip_text:
+        if not self.text_encoder:
             # not generating slots
             return None, None, None
         # we treat each obj as batch dim and get global text (for each phrase)
-        bs = tokens.shape[0]
-        assert tokens.shape[1] == self.num_slots
-        text_features = self.clip_model.encode_text(
-            tokens.flatten(0, 1),
-            lin_proj=False,
-            per_token_emb=False,
-            return_mask=False).unflatten(0, (bs, self.num_slots))  # [B, N, C]
-        text_features = text_features.type(self.dtype)
+        if self.text_encoder.lower() == 'clip':
+            bs = tokens.shape[0]
+            assert tokens.shape[1] == self.num_slots
+            text_features = self.clip_model.encode_text(
+                tokens.flatten(0, 1),
+                lin_proj=False,
+                per_token_emb=False,
+                return_mask=False).unflatten(0, (bs, self.num_slots))
+        else:
+            token_ids = tokens['input_ids']
+            bs = token_ids.shape[0]
+            assert token_ids.shape[1] == self.num_slots
+            tokens = {k: v.flatten(0, 1) for k, v in tokens.items()}
+            text_features = self.text_encoder(
+                **tokens,
+                return_dict=True)['last_hidden_state'][:, 0].unflatten(
+                    0, (bs, self.num_slots))
+        text_features = text_features.type(self.dtype)  # [B, N, C]
         slots, _ = self.text2slot_model(text_features)
         return slots, _, text_features
 
@@ -326,7 +336,7 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         self,
         clip_model: CLIP,
         use_clip_vision: bool,
-        use_clip_text: bool,
+        text_encoder: str,  # '' or 'clip' or a name from transformers lib
         text2slot_model: nn.Module,  # if None, then don't use it here
         resolution: Tuple[int, int],
         slot_dict=dict(
@@ -361,7 +371,7 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         super().__init__(
             clip_model,
             use_clip_vision,
-            use_clip_text,
+            text_encoder,
             text2slot_model,
             resolution,
             slot_dict=slot_dict,

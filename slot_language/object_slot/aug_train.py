@@ -46,6 +46,8 @@ def build_data_module(params: SlotAttentionParams):
         val_batch_size=params.val_batch_size,
         clip_transforms=clip_transforms,
         num_workers=params.num_workers,
+        tokenizer=params.text_encoder
+        if hasattr(params, 'text_encoder') else 'clip',
         max_n_objects=params.num_slots - 1,
         prompt=params.prompt,
         shuffle_obj=params.shuffle_obj,

@@ -8,6 +8,7 @@ from typing import Optional
 
 import torch
 import torchvision.transforms.functional as TF
+from transformers import AutoTokenizer
 
 import clip
 
@@ -26,6 +27,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         data_root: str,
         max_num_images: Optional[int],
         clip_transforms: Callable,
+        tokenizer: str = 'clip',
         max_n_objects: int = 6,
         split: str = "train",
         clip_len: int = 34,
@@ -42,6 +44,11 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         self.shuffle_obj = shuffle_obj
         self.pad_text = pad_text
         self.text_num = 1 + self.max_n_objects
+
+        self.tokenizer = tokenizer
+        if tokenizer and tokenizer.lower() != 'clip':
+            print(f'Using {tokenizer} from transformers lib')
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer)
 
     def _rand_another(self, index):
         num_data = self.num_videos if self.is_video else len(self)
@@ -76,7 +83,10 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
     def _tokenize_text(self, texts: Tuple[str]):
         """Tokenize texts and pad to `self.max_n_objects`"""
         assert len(texts) == self.text_num
-        tokens = clip.tokenize(texts)  # [N + 1, C]
+        if self.tokenizer == 'clip':
+            tokens = clip.tokenize(texts)  # [N + 1, C]
+        else:
+            tokens = self.tokenizer(texts, return_tensors='pt', padding=True)
         return tokens
 
     def _generate_text(self, index: int):
@@ -106,11 +116,13 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
         val_batch_size: int,
         clip_transforms: Callable,
         num_workers: int,
+        tokenizer: str = 'clip',
         max_n_objects: int = 6,
         prompt: str = 'a {color} {shape}',
         shuffle_obj: bool = False,
         pad_text: str = 'background',
     ):
+        self.tokenizer = tokenizer
         self.prompt = prompt
         self.shuffle_obj = shuffle_obj
         self.pad_text = pad_text
@@ -122,6 +134,7 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             data_root=self.data_root,
             max_num_images=self.num_train_images,
             clip_transforms=self.clip_transforms,
+            tokenizer=self.tokenizer,
             max_n_objects=self.max_n_objects,
             split='train',
             prompt=self.prompt,
@@ -132,6 +145,7 @@ class ObjCLEVRVisionLanguageCLIPDataModule(CLEVRVisionLanguageCLIPDataModule):
             data_root=self.data_root,
             max_num_images=self.num_val_images,
             clip_transforms=self.val_clip_transforms,
+            tokenizer=self.tokenizer,
             max_n_objects=self.max_n_objects,
             split='val',
             prompt=self.prompt,
@@ -151,6 +165,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
             data_root: str,
             max_num_images: Optional[int],
             clip_transforms: Callable,
+            tokenizer: str = 'clip',
             max_n_objects: int = 6,
             split: str = "train",
             clip_len: int = 34,
@@ -161,7 +176,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset
             sample_clip_num: int = 2,  # loaded clips per video
     ):
         # TODO: we assume `self.max_n_objects` == 6 here!
-        super().__init__(data_root, max_num_images, clip_transforms,
+        super().__init__(data_root, max_num_images, clip_transforms, tokenizer,
                          max_n_objects, split, clip_len, prompt, is_video,
                          shuffle_obj, pad_text)
         self.sample_clip_num = sample_clip_num
@@ -219,6 +234,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
         val_batch_size: int,
         clip_transforms: Callable,
         num_workers: int,
+        tokenizer: str = 'clip',
         max_n_objects: int = 6,
         prompt: str = 'a {color} {shape}',
         shuffle_obj: bool = False,
@@ -227,14 +243,15 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
     ):
         self.sample_clip_num = sample_clip_num
         super().__init__(data_root, train_batch_size, val_batch_size,
-                         clip_transforms, num_workers, max_n_objects, prompt,
-                         shuffle_obj, pad_text)
+                         clip_transforms, num_workers, tokenizer,
+                         max_n_objects, prompt, shuffle_obj, pad_text)
 
     def _build_dataset(self):
         self.train_dataset = ObjRecurCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
             clip_transforms=self.clip_transforms,
+            tokenizer=self.tokenizer,
             max_n_objects=self.max_n_objects,
             split='train',
             prompt=self.prompt,
@@ -246,6 +263,7 @@ class ObjRecurCLEVRVisionLanguageCLIPDataModule(
             data_root=self.data_root,
             max_num_images=self.num_val_images,
             clip_transforms=self.val_clip_transforms,
+            tokenizer=self.tokenizer,
             max_n_objects=self.max_n_objects,
             split='val',
             prompt=self.prompt,
@@ -265,6 +283,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
                  data_root: str,
                  max_num_images: Optional[int],
                  clip_transforms: Callable,
+                 tokenizer: str = 'clip',
                  max_n_objects: int = 6,
                  split: str = "train",
                  clip_len: int = 34,
@@ -273,7 +292,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
                  shuffle_obj: bool = False,
                  pad_text: str = 'background',
                  flip_img: bool = False):
-        super().__init__(data_root, max_num_images, clip_transforms,
+        super().__init__(data_root, max_num_images, clip_transforms, tokenizer,
                          max_n_objects, split, clip_len, prompt, is_video,
                          shuffle_obj, pad_text)
         self.flip_img = flip_img
@@ -348,6 +367,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
         val_batch_size: int,
         clip_transforms: Callable,
         num_workers: int,
+        tokenizer: str = 'clip',
         max_n_objects: int = 6,
         prompt: str = 'a {color} {shape}',
         shuffle_obj: bool = False,
@@ -356,14 +376,15 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
     ):
         self.flip_img = flip_img
         super().__init__(data_root, train_batch_size, val_batch_size,
-                         clip_transforms, num_workers, max_n_objects, prompt,
-                         shuffle_obj, pad_text)
+                         clip_transforms, num_workers, tokenizer,
+                         max_n_objects, prompt, shuffle_obj, pad_text)
 
     def _build_dataset(self):
         self.train_dataset = ObjAugCLEVRVisionLanguageCLIPDataset(
             data_root=self.data_root,
             max_num_images=self.num_train_images,
             clip_transforms=self.clip_transforms,
+            tokenizer=self.tokenizer,
             max_n_objects=self.max_n_objects,
             split='train',
             prompt=self.prompt,
@@ -375,6 +396,7 @@ class ObjAugCLEVRVisionLanguageCLIPDataModule(
             data_root=self.data_root,
             max_num_images=self.num_val_images,
             clip_transforms=self.val_clip_transforms,
+            tokenizer=self.tokenizer,
             max_n_objects=self.max_n_objects,
             split='val',
             prompt=self.prompt,

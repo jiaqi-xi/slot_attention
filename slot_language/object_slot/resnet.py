@@ -12,12 +12,13 @@ def conv(in_planes: int,
          stride: int = 1,
          groups: int = 1,
          dilation: int = 1):
+    padding = (kernel_size + (kernel_size - 1) * (dilation - 1) - stride) // 2
     return nn.Conv2d(
         in_planes,
         out_planes,
         kernel_size=kernel_size,
         stride=stride,
-        padding=dilation,
+        padding=padding,
         groups=groups,
         dilation=dilation)
 
@@ -43,8 +44,8 @@ class BasicBlock(nn.Module):
             norm_layer: Optional[Callable[..., nn.Module]] = None) -> None:
         super(BasicBlock, self).__init__()
         if isinstance(norm_layer, str):
-            self.bn1 = get_normalizer(norm_layer)
-            self.bn2 = get_normalizer(norm_layer)
+            self.bn1 = get_normalizer(norm_layer, planes)
+            self.bn2 = get_normalizer(norm_layer, planes)
         else:
             if norm_layer is None:
                 norm_layer = nn.BatchNorm2d
@@ -59,7 +60,8 @@ class BasicBlock(nn.Module):
                 "Dilation > 1 not supported in BasicBlock")
 
         # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv(inplanes, planes, stride, kernel_size=kernel_size)
+        self.conv1 = conv(
+            inplanes, planes, kernel_size=kernel_size, stride=stride)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv(planes, planes, kernel_size=kernel_size)
         self.downsample = downsample
@@ -97,7 +99,8 @@ class StackedResBlock(nn.Module):
 
         assert len(channels) % 2 == 0
 
-        modules = []
+        modules = [conv(in_channels, channels[0], kernel_size=kernel_size)]
+        in_channels = channels[0]
         for i in range(len(channels) // 2):
             assert channels[i * 2] == channels[i * 2 + 1]
             modules.append(

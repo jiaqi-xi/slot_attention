@@ -38,6 +38,7 @@ class SlotAttentionParams:
     use_text2slot: bool = True
     text2slot_arch: str = 'MLP'  # or 'Transformer' or 'DETR'
     # for MLP
+    text_encoder: str = 'clip'
     text2slot_hidden_sizes: Tuple[int] = (512, )
     predict_slot_dist: bool = False  # directly predict for each slot
     # for Transformer
