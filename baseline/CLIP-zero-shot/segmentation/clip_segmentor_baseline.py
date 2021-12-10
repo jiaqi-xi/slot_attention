@@ -11,40 +11,38 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
+from clip_model import CLIPVisionEncoder, CLIPTextEncoder
 from obj_data import ObjCLEVRVisionLanguageCLIPDataset
 from seg_params import SegParams
 
 
-def batch_seg(clip_model, batch_data):
+def batch_seg(clip_vision, clip_text, batch_data):
     # img: [B, C, H, W]
     # tokens: [B, num_obj, 77]
     batch_data = {k: v.cuda() for k, v in batch_data.items()}
     img, tokens = batch_data['img'], batch_data['tokens']
     B = img.shape[0]
-    # encode image features
-    img_feats = clip_model.encode_image(
-        img, global_feats=False, downstream=False)  # [B, n^2, C]
-    num_grids = int(img_feats.shape[1]**0.5)
-    img_feats = F.normalize(
-        img_feats, p=2, dim=-1).permute(0, 2, 1).contiguous()  # [B, C, n^2]
-    # encode text features
-    text_feats = clip_model.encode_text(
-        tokens.view(-1, tokens.shape[-1]),
-        lin_proj=True,
-        per_token_emb=False,
-        return_mask=False)  # [B*num_obj, C]
+    # encode image features, [B, C, n1, n2]
+    img_feats = clip_vision(img, lin_proj=True, res_no_pool=True)
+    img_feats = F.normalize(img_feats, p=2, dim=1)
+    n1, n2 = img_feats.shape[-2:]
+    # encode text features, [B*num_obj, C]
+    text_feats = clip_text(tokens.view(-1, tokens.shape[-1]), lin_proj=True)
     text_feats = F.normalize(text_feats, p=2, dim=-1).\
         view(B, -1, text_feats.shape[-1])  # [B, num_obj, C]
     assert img_feats.shape[1] == text_feats.shape[-1]
     # compute similarity map
-    sim_map = (img_feats[:, None] * text_feats[:, :, :, None]).sum(2).reshape(
-        B, -1, num_grids, num_grids)  # [B, num_obj, n, n]
+    sim_map = (img_feats[:, None] * text_feats[:, :, :, None, None]).sum(2).\
+        reshape(B, -1, n1, n2) * args.tau  # [B, num_obj, n1, n2]
     # convert to segmentation mask via argmax
     obj_mask = batch_data['obj_mask']  # [B, num_obj]
     seg_masks = torch.stack(
         [sim_map[i][obj_mask[i]].argmax(0) for i in range(B)],
-        dim=0)  # [B, n, n]
-    return seg_masks, [sim_map[i][obj_mask[i]] for i in range(B)]
+        dim=0)  # [B, n1, n2]
+    per_obj_masks = [
+        torch.softmax(sim_map[i][obj_mask[i]], dim=0) for i in range(B)
+    ]  # [B, num_fg_obj, n1, n2]
+    return seg_masks, per_obj_masks
 
 
 def main(params: SegParams):
@@ -55,6 +53,10 @@ def main(params: SegParams):
     if args.weight:
         ckp = torch.load(args.weight, map_location='cpu')
         clip_model.load_state_dict(ckp['model_state_dict'])
+
+    clip_vision = CLIPVisionEncoder(clip_model)
+    clip_text = CLIPTextEncoder(clip_model)
+    args.tau = clip_model.logit_scale.weight.exp().item() if args.tau else 1.0
 
     # build dataloader
     val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
@@ -72,16 +74,16 @@ def main(params: SegParams):
         False,
         num_workers=params.num_workers,
         pin_memory=True)
-    test(clip_model, val_loader, val_dataset, params)
+    test(clip_vision, clip_text, val_loader, val_dataset, params)
 
 
-def test(clip_model, dataloader, dataset, params: SegParams):
+def test(clip_vision, clip_text, dataloader, dataset, params: SegParams):
     dataloader = iter(dataloader)
     batch_data = next(dataloader)
     batch_data = {k: v[:params.num_test] for k, v in batch_data.items()}
     with torch.no_grad():
         # get `seg_mask` of shape [B, n, n], n is number of grids
-        seg_masks, probs_masks = batch_seg(clip_model, batch_data)
+        seg_masks, probs_masks = batch_seg(clip_vision, clip_text, batch_data)
         seg_masks = seg_masks.detach().cpu().numpy()
         probs_masks = [mask.detach().cpu().numpy() for mask in probs_masks]
     imgs = batch_data['ori_img'].detach().cpu().numpy().astype(np.float32)
@@ -115,10 +117,12 @@ def test(clip_model, dataloader, dataset, params: SegParams):
         print(raw_texts[i], f'segmenting {seg_masks[i].max() + 1} classes')
         # plot prob_mask for each text, [K, n, n]
         probs_mask = probs_masks[i]
-        for j in range(probs_mask.shape[0]):
-            probs_mask[j] += probs_mask[j].min()
-            probs_mask[j] /= probs_mask[j].max()  # to [0, 1]
-            probs_mask[j] = (probs_mask[j] * 255.).astype(np.uint8)
+        # TODO: because we already do softmax?
+        # for j in range(probs_mask.shape[0]):
+        #     probs_mask[j] += probs_mask[j].min()
+        #     probs_mask[j] /= probs_mask[j].max()  # to [0, 1]
+        assert probs_mask.min() >= 0. and probs_mask.max() <= 1.
+        probs_mask = (probs_mask * 255.).astype(np.uint8)
         probs_mask = np.ascontiguousarray(probs_mask.transpose(1, 2, 0))
         probs_mask = cv2.resize(
             probs_mask.astype(np.uint8),
@@ -143,6 +147,7 @@ def test(clip_model, dataloader, dataset, params: SegParams):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CLIP for zero-shot seg')
     parser.add_argument('--weight', type=str, default='')
+    parser.add_argument('--tau', type=bool, action='store_true')
     args = parser.parse_args()
     vis_path = './vis/'
     os.makedirs(vis_path, exist_ok=True)

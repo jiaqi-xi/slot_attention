@@ -4,7 +4,6 @@ from typing import Tuple
 import torch
 from torch import nn
 
-from clip import CLIP
 from unet import UNet
 from resnet import StackedResBlock
 from obj_utils import SepLinear, SepLayerNorm, SepGRUCell
@@ -206,9 +205,8 @@ class ObjSlotAttentionModel(SlotAttentionModel):
 
     def __init__(
         self,
-        clip_model: CLIP,
-        use_clip_vision: bool,
-        text_encoder: str,  # '' or 'clip' or a name from transformers lib
+        clip_vision_encoder: nn.Module,
+        text_encoder: nn.Module,
         text2slot_model: nn.Module,
         resolution: Tuple[int, int],
         slot_dict=dict(
@@ -239,11 +237,10 @@ class ObjSlotAttentionModel(SlotAttentionModel):
         self.use_resnet = enc_dict['use_resnet']
         assert not (self.use_resnet and self.use_unet)
         if self.use_unet or self.use_resnet:
-            assert not use_clip_vision
+            assert clip_vision_encoder is not None
 
         super().__init__(
-            clip_model,
-            use_clip_vision,
+            clip_vision_encoder,
             text_encoder,
             text2slot_model,
             resolution,
@@ -308,24 +305,12 @@ class ObjSlotAttentionModel(SlotAttentionModel):
             # not generating slots
             return None, None, None
         # we treat each obj as batch dim and get global text (for each phrase)
-        if self.text_encoder == 'clip':
-            bs = tokens.shape[0]
-            assert tokens.shape[1] == self.num_slots
-            text_features = self.clip_model.encode_text(
-                tokens.flatten(0, 1),
-                lin_proj=False,
-                per_token_emb=False,
-                return_mask=False).unflatten(0, (bs, self.num_slots))
-        else:
-            token_ids = tokens['input_ids']
-            bs = token_ids.shape[0]
-            assert token_ids.shape[1] == self.num_slots
+        if not isinstance(tokens, torch.Tensor):
             tokens = {k: v.flatten(0, 1) for k, v in tokens.items()}
-            text_features = self.text_encoder(
-                **tokens,
-                return_dict=True)['last_hidden_state'][:, 0].unflatten(
-                    0, (bs, self.num_slots))
-        text_features = text_features.type(self.dtype)  # [B, N, C]
+        else:
+            tokens = tokens.flatten(0, 1)
+        text_features = self.text_encoder(tokens).\
+            unflatten(0, (-1, self.num_slots)).type(self.dtype)  # [B, N, C]
         slots, _ = self.text2slot_model(text_features)
         return slots, _, text_features
 
@@ -334,9 +319,8 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
 
     def __init__(
         self,
-        clip_model: CLIP,
-        use_clip_vision: bool,
-        text_encoder: str,  # '' or 'clip' or a name from transformers lib
+        clip_vision_encoder: nn.Module,
+        text_encoder: nn.Module,
         text2slot_model: nn.Module,  # if None, then don't use it here
         resolution: Tuple[int, int],
         slot_dict=dict(
@@ -369,8 +353,7 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
         self.dec_pos_size = dec_dict['dec_pos_size']
 
         super().__init__(
-            clip_model,
-            use_clip_vision,
+            clip_vision_encoder,
             text_encoder,
             text2slot_model,
             resolution,
@@ -415,12 +398,7 @@ class SemPosSepObjSlotAttentionModel(ObjSlotAttentionModel):
 
     def _get_encoder_out(self, img):
         """Encode image, potentially add pos enc, apply MLP."""
-        if self.use_clip_vision:
-            encoder_out = self.clip_model.encode_image(
-                img, global_feats=False, downstream=True)  # BCDD
-            encoder_out = encoder_out.type(self.dtype)
-        else:
-            encoder_out = self.encoder(img)
+        encoder_out = self.encoder(img).type(self.dtype)
         img_feats = encoder_out  # Conv features without pos_enc
         encoder_out = self.encoder_pos_embedding(encoder_out).\
             permute(0, 2, 3, 1).flatten(1, 2)

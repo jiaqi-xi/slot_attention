@@ -18,7 +18,8 @@ from cater_data import ObjCATERVisionLanguageCLIPDataModule
 
 sys.path.append('../')
 
-from train import build_data_transforms, process_ckp
+from train import build_vision_encoder, build_text_encoder, \
+    build_data_transforms, process_ckp
 from text_model import ObjMLPText2Slot
 from utils import VideoLogCallback, ImageLogCallback
 
@@ -72,13 +73,13 @@ def build_text2slot_model(params: SlotAttentionParams):
 
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
+    vision_encoder = build_vision_encoder(params, clip_model)
+    text_encoder = build_text_encoder(params, clip_model)
     text2slot_model = build_text2slot_model(params)
     print('Using SemPosSepObjSlotAttentionModel!')
     model = SemPosSepObjSlotAttentionModel(
-        clip_model=clip_model,
-        use_clip_vision=params.use_clip_vision,
-        text_encoder=params.text_encoder
-        if hasattr(params, 'text_encoder') else 'clip',
+        clip_vision_encoder=vision_encoder,
+        text_encoder=text_encoder,
         text2slot_model=text2slot_model,
         resolution=params.resolution,
         slot_dict=dict(

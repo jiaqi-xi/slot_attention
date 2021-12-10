@@ -4,7 +4,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.nn import TransformerDecoder, TransformerDecoderLayer
+from transformers import AutoModel
 
+from clip import CLIP
 from utils import Tensor, build_mlps
 
 
@@ -189,3 +191,130 @@ class ObjMLPText2Slot(nn.Module):
         if self.normalize_slots:
             slots = F.normalize(slots, p=2, dim=-1)
         return slots, None  # None is for sigma
+
+
+class CLIPTextEncoder(nn.Module):
+
+    def __init__(self, clip_model: CLIP, context_len: int):
+        super().__init__()
+
+        self.token_embedding = clip_model.token_embedding
+        self.positional_embedding = clip_model.positional_embedding
+        self.transformer = clip_model.transformer
+        self.ln_final = clip_model.ln_final
+
+        self.transformer_width = self.token_embedding.weight.shape[1]
+        self.context_len = context_len
+        if self.context_len > 0:
+            # from CoOp paper, we random init a general context vector
+            # and concat it in front of text
+            self.context_embedding = nn.Parameter(
+                nn.init.normal_(
+                    torch.empty(
+                        self.context_len,
+                        self.transformer_width,
+                        dtype=clip_model.dtype),
+                    std=0.02))
+
+    def _concat_context(self, text: Tensor, context: Tensor):
+        x_text = self.token_embedding(text).type(self.dtype)  # [B, n_ctx, C]
+        eos_idx = text.argmax(dim=-1)
+
+        use_context = (context is not None) or (self.context_len > 0)
+        if not use_context:
+            return x_text, eos_idx
+
+        B = x_text.shape[0]
+        if context is None:
+            context = self.context_embedding.unsqueeze(0).repeat(B, 1, 1)
+        N2 = context.shape[1]
+
+        # eos has the max token_id, add `N2` to get eos_idx after concat
+        eos_idx = eos_idx + N2  # [B]
+        assert eos_idx.max() < text.shape[1]
+        x = torch.cat([x_text[:, :1], context, x_text[:, 1:-N2]], dim=1)
+        return x, eos_idx
+
+    def forward(self, text: Tensor, context: Tensor = None):
+        """text: token_id of shape [B, n_ctx]"""
+        x, eos_idx = self._concat_context(text, context)
+
+        x = x + self.positional_embedding.type(self.dtype)
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = self.transformer(x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = self.ln_final(x).type(self.dtype)
+
+        # x.shape = [B, n_ctx, C]
+        # take features from the eos embedding
+        x = x[torch.arange(x.shape[0]), eos_idx]
+
+        return x  # [B, C]
+
+    @property
+    def dtype(self):
+        return self.transformer.resblocks[0].mlp[0].weight.dtype
+
+
+class TransformerTextEncoder(nn.Module):
+
+    def __init__(self, model_name: str, context_len: int):
+        super().__init__()
+
+        print(f'Using {model_name} model from transformers lib')
+        self.text_encoder = AutoModel.from_pretrained(model_name)
+
+        self.transformer_width = \
+            self.text_encoder.embeddings.word_embeddings.weight.shape[1]
+        self.context_len = context_len
+        if self.context_len > 0:
+            # from CoOp paper, we random init a general context vector
+            # and concat it in front of text
+            self.context_embedding = nn.Parameter(
+                nn.init.normal_(
+                    torch.empty(
+                        self.context_len,
+                        self.transformer_width,
+                        dtype=self.text_encoder.dtype),
+                    std=0.02))
+
+    def _concat_context(self, tokens: dict, context: Tensor):
+        use_context = (context is not None) or (self.context_len > 0)
+        if not use_context:
+            return tokens
+
+        input_ids = tokens['input_ids']  # [B, n_ctx] torch.long
+        token_type_ids = tokens['token_type_ids']  # [B, n_ctx] all zeros
+        attention_mask = tokens['attention_mask']  # [B, n_ctx] mask
+
+        # in order to concat with context vectors, we need to manually get
+        # the token embeddings out, shape [B, n_ctx, C]
+        x_text = self.text_encoder.embeddings.word_embeddings(input_ids)
+        B = x_text.shape[0]
+        if context is None:
+            context = self.context_embedding.unsqueeze(0).repeat(B, 1, 1)
+        N2 = context.shape[1]
+        x = torch.cat([x_text[:, :1], context, x_text[:, 1:]], dim=1)
+        token_type_ids = torch.cat([
+            token_type_ids[:, :1],
+            torch.zeros((B, N2)).type_as(token_type_ids), token_type_ids[:, 1:]
+        ],
+                                   dim=1)
+        attention_mask = torch.cat([
+            attention_mask[:, :1],
+            torch.ones((B, N2)).type_as(attention_mask), attention_mask[:, 1:]
+        ],
+                                   dim=1)
+        tokens = {
+            'inputs_embeds': x,
+            'token_type_ids': token_type_ids,
+            'attention_mask': attention_mask
+        }
+        return tokens
+
+    def forward(self, tokens: dict, context: Tensor = None):
+        tokens = self._concat_context(tokens, context)
+        # take the [CLS] embedding as the sentence feature
+        text_features = self.text_encoder(
+            **tokens, return_dict=True)['last_hidden_state'][:, 0]
+        return text_features

@@ -75,6 +75,7 @@ class SlotAttentionParams:
 
     # Text2Slot model
     text_encoder: str = 'clip'
+    context_len: int = 0
     use_text2slot: bool = True
     text2slot_arch: str = 'MLP'  # or 'Transformer' or 'DETR'
     # for MLP
@@ -95,7 +96,7 @@ class SlotAttentionParams:
     gpus: int = 1
     batch_size: int = 64
     val_batch_size: int = 64
-    max_epochs: int = 16
+    max_epochs: int = 8
     num_sanity_val_steps: int = 1
     num_train_images: Optional[int] = None
     num_val_images: Optional[int] = None

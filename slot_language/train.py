@@ -10,7 +10,9 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
-from text_model import MLPText2Slot, TransformerText2Slot
+from vision_model import CLIPVisionEncoder
+from text_model import MLPText2Slot, TransformerText2Slot, \
+    CLIPTextEncoder, TransformerTextEncoder
 from detr_module import DETRText2Slot
 from data import CLEVRVisionLanguageCLIPDataModule
 from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
@@ -98,13 +100,33 @@ def build_text2slot_model(params: SlotAttentionParams):
     return text2slot_model
 
 
+def build_text_encoder(params: SlotAttentionParams, clip_model):
+    text_encoder = params.text_encoder if \
+        hasattr(params, 'text_encoder') else 'clip'
+    if not text_encoder:
+        return None
+    context_len = params.context_len if hasattr(params, 'context_len') else 0
+    if text_encoder == 'clip':
+        text_encoder = CLIPTextEncoder(clip_model, context_len=context_len)
+    else:
+        text_encoder = TransformerTextEncoder(text_encoder)
+    return text_encoder
+
+
+def build_vision_encoder(params: SlotAttentionParams, clip_model):
+    if not params.use_clip_vision:
+        return None
+    return CLIPVisionEncoder(clip_model)
+
+
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
+    vision_encoder = build_vision_encoder(params, clip_model)
+    text_encoder = build_text_encoder(params, clip_model)
     text2slot_model = build_text2slot_model(params)
     model = SlotAttentionModel(
-        clip_model=clip_model,
-        use_clip_vision=params.use_clip_vision,
-        text_encoder=params.text_encoder,
+        clip_vision_encoder=vision_encoder,
+        text_encoder=text_encoder,
         text2slot_model=text2slot_model,
         resolution=params.resolution,
         slot_dict=dict(

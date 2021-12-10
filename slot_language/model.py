@@ -3,9 +3,7 @@ from typing import Tuple
 import torch
 from torch import nn
 from torch.nn import functional as F
-from transformers import AutoModel
 
-from clip import CLIP
 from utils import Tensor, assert_shape, build_grid, conv_transpose_out_shape, \
     conv_bn_relu, deconv_bn_relu
 
@@ -326,9 +324,8 @@ class SlotAttentionModel(nn.Module):
 
     def __init__(
         self,
-        clip_model: CLIP,
-        use_clip_vision: bool,
-        text_encoder: str,  # '' or 'clip' or a name from transformers lib
+        clip_vision_encoder: nn.Module,
+        text_encoder: nn.Module,
         text2slot_model: nn.Module,  # if None, then don't use it here
         resolution: Tuple[int, int],
         slot_dict=dict(
@@ -375,30 +372,22 @@ class SlotAttentionModel(nn.Module):
         self.dec_resolution = dec_dict['dec_resolution']
         self.dec_norm = dec_dict['dec_norm']
 
-        self.use_word_set = use_word_set
-        self.use_padding_mask = use_padding_mask
+        assert not use_word_set
+        assert not use_padding_mask
 
         # Pre-trained CLIP model, we freeze it here
-        self.clip_model = clip_model.eval()
-        for p in self.clip_model.parameters():
-            p.requires_grad = False
-        self.use_clip_vision = use_clip_vision
-        if not self.use_clip_vision:
+        self.use_clip_vision = clip_vision_encoder is not None
+        if self.use_clip_vision:
+            self.encoder = clip_vision_encoder
+        else:
             self.enc_resolution = self.resolution
             self.visual_feats_channels = self.enc_channels[-1]
-            # self.clip_model.visual = None
 
         # Text2Slot that generates slot embedding from text features
         self.text_encoder = text_encoder
-        if text_encoder:
-            # encode text features, so need text2slot to convert to slot init
-            assert text2slot_model is not None
-            if text_encoder != 'clip':
-                print(f'Using {text_encoder} model from transformers lib')
-                self.text_encoder = AutoModel.from_pretrained(text_encoder)
-                # freeze BERT
-                for p in self.text_encoder.parameters():
-                    p.requires_grad = False
+        # we freeze the text encoder
+        for p in self.text_encoder.parameters():
+            p.requires_grad = False
         self.text2slot_model = text2slot_model
 
         # extra loss besides reconstruction loss
@@ -485,12 +474,7 @@ class SlotAttentionModel(nn.Module):
 
     def _get_encoder_out(self, img):
         """Encode image, potentially add pos enc, apply MLP."""
-        if self.use_clip_vision:
-            encoder_out = self.clip_model.encode_image(
-                img, global_feats=False, downstream=True)  # BCDD
-            encoder_out = encoder_out.type(self.dtype)
-        else:
-            encoder_out = self.encoder(img)
+        encoder_out = self.encoder(img).type(self.dtype)
         img_feats = encoder_out  # Conv features without pos_enc
         encoder_out = self.encoder_pos_embedding(encoder_out)
         # `encoder_out` has shape: [batch_size, C, height, width]
@@ -506,23 +490,7 @@ class SlotAttentionModel(nn.Module):
         if not self.text_encoder:
             # not generating slots
             return None, None
-        if self.text_encoder == 'clip':
-            text_features = self.clip_model.encode_text(
-                text,
-                lin_proj=False,
-                per_token_emb=self.use_word_set,
-                return_mask=self.use_padding_mask)  # BC or BLC + padding mask
-            if self.use_padding_mask:
-                text_features, padding_mask = text_features[0].type(
-                    self.dtype), text_features[1].type(self.dtype)
-                text_features = dict(
-                    text_features=text_features, padding_mask=padding_mask)
-            else:
-                text_features = text_features.type(self.dtype)
-        else:
-            text_features = self.text_encoder(
-                **text,
-                return_dict=True)['last_hidden_state'][:, 0].type(self.dtype)
+        text_features = self.text_encoder(text).type(self.dtype)
         slot_mu, slot_log_sigma = self.text2slot_model(text_features)
         return slot_mu, slot_log_sigma, text_features
 
