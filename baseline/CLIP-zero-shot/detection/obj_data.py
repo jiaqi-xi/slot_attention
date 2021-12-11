@@ -437,7 +437,7 @@ class ObjCLEVRVisionLanguageCLIPDataset(CLEVRVisionLanguageCLIPDataset):
         colors = [obj['color'] for obj in anno['objects']]
         shapes = [obj['shape'] for obj in anno['objects']]
         texts = [
-            'a {} {}'.format(color, shape)
+            'a photo of {} {}'.format(color, shape)
             for color, shape in zip(colors, shapes)
         ]
         # pad with some special texts, e.g. 'background'

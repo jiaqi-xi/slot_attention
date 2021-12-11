@@ -18,13 +18,10 @@ from PIL import Image, ImageDraw
 from ensemble_boxes import weighted_boxes_fusion
 import random
 
-from obj_data import ObjCLEVRVisionLanguageCLIPDataset
+from obj_data import ObjCLEVRVisionLanguageCLIPDataset, build_data_transforms
 from sliding_params import SlidingParams
 from generate_anchors import generate_anchors
 
-sys.path.append('../../slot_language/')
-
-from train import build_data_transforms
 
 
 class AnchorImageDataset(Dataset):
@@ -57,7 +54,7 @@ def build_dataset(params):
     return clevr_dataset
 
 
-def get_img(index: int, dataset):
+def get_img(index, dataset):
     img_idx, frame_idx = dataset._get_idx(index)
     image_path = dataset.files[img_idx]
     cap = cv2.VideoCapture(image_path)
@@ -233,25 +230,33 @@ class CLIPDetectorV0:
         return result
 
 
-def main(dataset, params: Optional[SlidingParams] = None):
+def main(params: Optional[SlidingParams] = None):
     if params is None:
         params = SlidingParams()
+    clevr_dataset = build_dataset(params)
 
+    # clip model
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load(params.clip_arch, device=device)
+    if args.weight:
+        ckp = torch.load(args.weight, map_location='cpu')
+        model.load_state_dict(ckp['model_state_dict'])
+    clip_detector = CLIPDetectorV0(model, preprocess, device)
+
+    for i in range(1):
+        test(clip_detector, clevr_dataset)
+
+
+def test(clip_detector, clevr_dataset):
     # sample an image from the dataset
     sample_index = np.random.randint(0, 10000)
-    clevr_dataset = dataset
+    sample_index = 0
     # video_sample = clevr_dataset[sample_index]  # already processed by clip
     ori_img = get_img(sample_index, clevr_dataset)
     # print('img.shape = ', img.shape)
     img = Image.fromarray(ori_img)
     raw_text = clevr_dataset._generate_text(sample_index)
     print(f'raw_text of sample {sample_index} = {raw_text}')
-    # return
-
-    # clip model
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model, preprocess = clip.load(params.clip_arch, device=device)
-    clip_detector = CLIPDetectorV0(model, preprocess, device)
 
     # get coords and anchor features
     ss = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()  # selective search
@@ -261,21 +266,7 @@ def main(dataset, params: Optional[SlidingParams] = None):
     # print('coords: ', coords)
     print(f'#windows = {len(coords)}')
 
-    # imOut = ori_img.copy()
-    # for i, rect in enumerate(coords):
-    #     x, y, w, h = rect
-    #     cv2.rectangle(imOut, (x, y), (x + w, y + h), (0, 255, 0), 1, cv2.LINE_AA)
-    #     cv2.imwrite("ss.png", imOut)
-    # return
-
     anchor_features = clip_detector.get_anchor_features(img, coords)
-
-    # cyan: (0, 255, 255)
-    # brown: (135, 51, 36)
-    # yellow: (255, 215, 0)
-    # purple: (128, 128, 255)
-    # red: (255, 0, 0)
-    # green: (0, 255, 0)
     colors = {
         'red': (255, 0, 0), 'green': (0, 255, 0), 'blue': (0, 0, 255), 'cyan': (0, 255, 255),
         'yellow': (255, 215, 0), 'black': (0, 0, 0), 'white': (255, 255, 255), 'gray': (125, 125, 125),
@@ -283,7 +274,9 @@ def main(dataset, params: Optional[SlidingParams] = None):
         'rand': np.random.randint(0, high=256, size=(3,)).tolist()}
     for i in range(len(raw_text)):
         text_embedding = clip_detector.get_text_embedding([raw_text[i]])
-        color_text = raw_text[i].split(' ')[1]
+        if raw_text[i] == 'background':
+            break
+        color_text = raw_text[i].split(' ')[3]
         if color_text in colors.keys():
             color = colors[color_text]
         else:
@@ -311,7 +304,10 @@ def main(dataset, params: Optional[SlidingParams] = None):
     plt.imsave(f'res/res_{sample_index}.png', img)
 
 
-params = SlidingParams()
-clevr_dataset = build_dataset(params)
-for i in range(10):
-    main(clevr_dataset, params)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='CLIP for sliding window detection')
+    parser.add_argument('--weight', type=str, default='')
+    args = parser.parse_args()
+    os.makedirs('./res/', exist_ok=True)
+    params = SlidingParams()
+    main(params)
