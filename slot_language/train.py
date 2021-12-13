@@ -109,7 +109,8 @@ def build_text_encoder(params: SlotAttentionParams, clip_model):
     if text_encoder == 'clip':
         text_encoder = CLIPTextEncoder(clip_model, context_len=context_len)
     else:
-        text_encoder = TransformerTextEncoder(text_encoder)
+        text_encoder = TransformerTextEncoder(
+            text_encoder, context_len=context_len)
     return text_encoder
 
 

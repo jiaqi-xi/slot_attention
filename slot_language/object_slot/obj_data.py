@@ -324,18 +324,20 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
             flipped_img = TF.hflip(img)
         else:
             flipped_img = img.detach().clone()
+
+        # load text description and potentially do text shuffling
+        text, shuffled_text, shuffled_idx, \
+            obj_mask, shuffled_obj_mask = self._generate_text(index)
+        tokens = self._tokenize_text(text)
+
         if self.split != 'train':
-            text = self._generate_text(index)
-            tokens = self._tokenize_text(text)
             return dict(
                 img=img,
                 flipped_img=flipped_img,
                 is_flipped=self.flip_img,
-                text=tokens)
+                text=tokens,
+            )
 
-        # load text description and potentially do text shuffling
-        text, shuffled_text, shuffled_idx = self._generate_text(index)
-        tokens = self._tokenize_text(text)
         shuffled_tokens = self._tokenize_text(shuffled_text)
         return dict(
             img=img,
@@ -344,7 +346,10 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
             text=tokens,
             shuffled_text=shuffled_tokens,
             shuffled_idx=shuffled_idx,
-            is_shuffled=self.shuffle_obj)
+            is_shuffled=self.shuffle_obj,
+            obj_mask=obj_mask,
+            shuffled_obj_mask=shuffled_obj_mask,
+        )
 
     def _generate_text(self, index: int):
         """Generate text descriptions of each object in the scene."""
@@ -357,8 +362,12 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
             for color, shape in zip(colors, shapes)
         ]
         # pad with some special texts, e.g. 'background'
+        # `True` in `obj_mask` stands for foreground objects
+        obj_mask = np.zeros(self.text_num, dtype=np.bool)
+        obj_mask[:len(texts)] = True
         texts = texts + [self.pad_text] * (self.text_num - len(texts))
         # shuffle the order of objects
+        shuffled_texts, idx, shuffled_obj_mask = None, None, None
         if self.split == 'train':
             idx = np.arange(len(texts))
             if self.shuffle_obj:
@@ -366,8 +375,8 @@ class ObjAugCLEVRVisionLanguageCLIPDataset(ObjCLEVRVisionLanguageCLIPDataset):
                 shuffled_texts = [texts[i] for i in idx]
             else:
                 shuffled_texts = copy.deepcopy(texts)
-            return texts, shuffled_texts, idx
-        return texts
+            shuffled_obj_mask = obj_mask[idx]
+        return texts, shuffled_texts, idx, obj_mask, shuffled_obj_mask
 
 
 class ObjAugCLEVRVisionLanguageCLIPDataModule(

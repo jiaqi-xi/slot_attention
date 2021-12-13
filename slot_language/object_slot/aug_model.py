@@ -19,6 +19,7 @@ class ObjAugSlotAttentionModel(nn.Module):
                 contrastive_T=0.1,
                 contrastive_normalize=True,
                 contrastive_stop_grad=False,
+                contrastive_same_bg=False,
             ),
             text_recon_dict=dict(
                 use_text_recon_loss=False,
@@ -37,16 +38,26 @@ class ObjAugSlotAttentionModel(nn.Module):
         self.contrastive_T = contrastive_dict['contrastive_T']
         self.contrastive_normalize = contrastive_dict['contrastive_normalize']
         self.contrastive_stop_grad = contrastive_dict['contrastive_stop_grad']
+        self.contrastive_same_bg = contrastive_dict['contrastive_same_bg']
         self.num_slots = self.model.num_slots
         self.slot_size = self.model.slot_size
         # index used for contrastive loss computation
         if self.use_contrastive_loss:
+            # `slot_idx` for indexing
+            self.register_buffer('slot_idx', torch.arange(self.num_slots))
+            # `neg_idx` for negative sample indexing
             sample_num = 2 * self.num_slots
             neg_idx = [list(range(sample_num)) for _ in range(sample_num)]
             for idx in range(sample_num):  # remove self and pos pair
                 neg_idx[idx].remove(idx)
                 neg_idx[idx].remove((idx + self.num_slots) % sample_num)
             self.register_buffer('neg_idx', torch.tensor(neg_idx).long())
+            # `non_diag_idx` for sample selection
+            non_diag_idx = [list(range(sample_num)) for _ in range(sample_num)]
+            for idx in range(sample_num):  # remove self
+                non_diag_idx[idx].remove(idx)
+            self.register_buffer('non_diag_idx', torch.tensor(neg_idx).long())
+            # build MLP as SimCLR's projection head
             contrastive_mlp = contrastive_dict['contrastive_mlp']
             if len(contrastive_mlp) >= 1:
                 self.contrastive_mlp = build_mlps(self.slot_size,
@@ -129,12 +140,13 @@ class ObjAugSlotAttentionModel(nn.Module):
         is_flipped = input['is_flipped'][0].item()
         is_shuffled = input['is_shuffled'][0].item()
         shuffled_idx = input['shuffled_idx'].long()  # [B, num_slots]
+        shuffled_obj_mask = input.get('shuffled_obj_mask', None)
 
         loss_dict['equivariance_loss'] = self.calc_equivariance_loss(
             masks, is_flipped, is_shuffled, shuffled_idx)
         if self.use_contrastive_loss:
             loss_dict['contrastive_loss'] = self.calc_contrastive_loss(
-                slots, is_shuffled, shuffled_idx)
+                slots, is_shuffled, shuffled_idx, shuffled_obj_mask)
         if self.use_text_recon_loss:
             loss_dict['text_recon_loss'] = self.calc_text_recon_loss(
                 slots, text_feats)
@@ -162,39 +174,66 @@ class ObjAugSlotAttentionModel(nn.Module):
                 torch.log(masks2), masks1, reduction='mean')
         return equivariance_loss
 
-    def calc_contrastive_loss(self, slots, is_shuffled, shuffled_idx):
+    def calc_contrastive_loss(self,
+                              slots,
+                              is_shuffled,
+                              shuffled_idx,
+                              shuffled_obj_mask=None):
         """Contrasting slots between different id."""
         bs = shuffled_idx.shape[0]
         slots = self.contrastive_mlp(slots)
+
+        # normalize slots to have unit length -- this is very useful!
+        if self.contrastive_normalize:
+            slots = F.normalize(slots, p=2, dim=-1)
+
         slots1, slots2 = slots[:bs], slots[bs:]  # [B, num_slots, slot_size]
         if is_shuffled:
             slots1 = slots1[torch.arange(bs)[:, None], shuffled_idx]
+
         # like in MoCo, maybe this can increase stability?
         if self.contrastive_stop_grad:
             slots2 = slots2.detach()
         slots = torch.cat([slots1, slots2], dim=1)
-        # slots shape [B, num_slots * 2, slot_size]
+        # slots shape [B, num_slots * 2, slot_size], set K = num_slots * 2
 
-        # construct anchor, positive, negative pairs
-        # anchor and pos is [B * num_slots * 2, slot_size]
-        # neg is [B * num_slots * 2, num_neg, slot_size]
-        anchor = torch.cat([slots1, slots2], dim=1).flatten(0, 1)
-        pos = torch.cat([slots2, slots1], dim=1).flatten(0, 1)
-        neg = slots[torch.arange(bs)[:, None, None],
-                    self.neg_idx[None]].flatten(0, 1)
-        if self.contrastive_normalize:
-            anchor = F.normalize(anchor, p=2, dim=-1)
-            pos = F.normalize(pos, p=2, dim=-1)
-            neg = F.normalize(neg, p=2, dim=-1)
-
-        # pos: [N, 1], neg: [N, K]
-        # CE loss by setting the first label as GT
-        l_pos = torch.einsum('nc,nc->n', [anchor, pos]).unsqueeze(-1)
-        l_neg = torch.einsum('nc,nmc->nm', [anchor, neg])
-        logits = torch.cat([l_pos, l_neg], dim=1)
-        logits /= self.contrastive_T
-        labels = torch.zeros(logits.shape[0]).long().to(logits.device)
-        contrastive_loss = F.cross_entropy(logits, labels)
+        if self.contrastive_same_bg and shuffled_obj_mask is not None:
+            logits = torch.einsum('bmc,bnc->bmn', [slots, slots])  # [B, K, K]
+            labels = torch.zeros_like(logits)  # [B, K, K]
+            # cross-view consistency
+            labels[:, self.slot_idx, self.slot_idx + self.num_slots] = 1.
+            labels[:, self.slot_idx + self.num_slots, self.slot_idx] = 1.
+            # set all background slots to be 1
+            # shuffled_obj_mask: [B, num_slots]
+            obj_mask = torch.cat([shuffled_obj_mask] * 2, dim=1)  # [B, K]
+            bg_mask = (~obj_mask)
+            idx = torch.ones_like(logits).bool() * \
+                bg_mask[:, None, :] * bg_mask[:, :, None]
+            labels[idx] = 1.
+            # exclude self * self
+            batch_idx = torch.arange(bs)[:, None, None]
+            logits = logits[batch_idx, self.non_diag_idx[None]]
+            logits /= self.contrastive_T
+            labels = labels[batch_idx, self.non_diag_idx[None]]  # [B, K, K-1]
+            labels = labels / labels.sum(dim=-1, keepdim=True)
+            contrastive_loss = F.binary_cross_entropy_with_logits(
+                logits, labels)
+        else:
+            # construct anchor, positive, negative pairs
+            # anchor and pos is [B * num_slots * 2, slot_size]
+            # neg is [B * num_slots * 2, num_neg, slot_size]
+            anchor = torch.cat([slots1, slots2], dim=1).flatten(0, 1)
+            pos = torch.cat([slots2, slots1], dim=1).flatten(0, 1)
+            neg = slots[torch.arange(bs)[:, None, None],
+                        self.neg_idx[None]].flatten(0, 1)
+            # pos: [N, 1], neg: [N, K], K == 2 * (num_slots - 1)
+            # CE loss by setting the first label as GT
+            l_pos = torch.einsum('nc,nc->n', [anchor, pos]).unsqueeze(-1)
+            l_neg = torch.einsum('nc,nmc->nm', [anchor, neg])
+            logits = torch.cat([l_pos, l_neg], dim=1)  # [N, K+1]
+            logits /= self.contrastive_T
+            labels = torch.zeros(logits.shape[0]).long().to(logits.device)
+            contrastive_loss = F.cross_entropy(logits, labels)
         return contrastive_loss
 
     def calc_text_recon_loss(self, slots, text_feats):

@@ -176,8 +176,12 @@ class ObjAugCATERVisionLanguageCLIPDataset(ObjAugCLEVRVisionLanguageCLIPDataset
             for size, color, shape in zip(sizes, colors, shapes)
         ]
         # pad with some special texts, e.g. 'background'
+        # `True` in `obj_mask` stands for foreground objects
+        obj_mask = np.zeros(self.text_num, dtype=np.bool)
+        obj_mask[:len(texts)] = True
         texts = texts + [self.pad_text] * (self.text_num - len(texts))
         # shuffle the order of objects
+        shuffled_texts, idx, shuffled_obj_mask = None, None, None
         if self.split == 'train':
             idx = np.arange(len(texts))
             if self.shuffle_obj:
@@ -185,8 +189,8 @@ class ObjAugCATERVisionLanguageCLIPDataset(ObjAugCLEVRVisionLanguageCLIPDataset
                 shuffled_texts = [texts[i] for i in idx]
             else:
                 shuffled_texts = copy.deepcopy(texts)
-            return texts, shuffled_texts, idx
-        return texts
+            shuffled_obj_mask = obj_mask[idx]
+        return texts, shuffled_texts, idx, obj_mask, shuffled_obj_mask
 
     def get_files(self) -> List[str]:
         """Load the image (video) path and loaded annotations (lists)."""

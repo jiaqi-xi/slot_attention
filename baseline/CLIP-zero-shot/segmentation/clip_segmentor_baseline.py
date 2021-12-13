@@ -1,6 +1,8 @@
 import os
 import cv2
+import random
 import argparse
+import importlib
 import numpy as np
 from tqdm import tqdm
 from matplotlib import pyplot as plt
@@ -14,6 +16,14 @@ from torch.utils.data import DataLoader
 from clip_model import CLIPVisionEncoder, CLIPTextEncoder
 from obj_data import ObjCLEVRVisionLanguageCLIPDataset
 from seg_params import SegParams
+
+
+def set_seed(seed=1):
+    print('Using random seed', seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def batch_seg(clip_vision, clip_text, batch_data):
@@ -49,6 +59,9 @@ def main(params: SegParams):
     # clip model
     device = "cuda" if torch.cuda.is_available() else "cpu"
     clip_model, preprocesser = clip.load(params.clip_arch, device=device)
+    if 'vit' not in params.clip_arch.lower():
+        # we don't need resizing/center crop in ResNet encoder
+        preprocesser.transforms = preprocesser.transforms[2:]
     # load finetuned CLIP weight
     if args.weight:
         ckp = torch.load(args.weight, map_location='cpu')
@@ -56,7 +69,7 @@ def main(params: SegParams):
 
     clip_vision = CLIPVisionEncoder(clip_model)
     clip_text = CLIPTextEncoder(clip_model)
-    args.tau = clip_model.logit_scale.weight.exp().item() if args.tau else 1.0
+    args.tau = clip_model.logit_scale.exp().item() if args.tau else 1.0
 
     # build dataloader
     val_dataset = ObjCLEVRVisionLanguageCLIPDataset(
@@ -78,6 +91,7 @@ def main(params: SegParams):
 
 
 def test(clip_vision, clip_text, dataloader, dataset, params: SegParams):
+    set_seed(0)
     dataloader = iter(dataloader)
     batch_data = next(dataloader)
     batch_data = {k: v[:params.num_test] for k, v in batch_data.items()}
@@ -100,7 +114,8 @@ def test(clip_vision, clip_text, dataloader, dataset, params: SegParams):
         colored_seg_mask = colored_seg_masks[i]  # [n, n, 3]
         colored_seg_mask = cv2.resize(
             colored_seg_mask, pil_img.size, interpolation=cv2.INTER_NEAREST)
-        pil_mask = Image.fromarray(colored_seg_mask)
+        blend_mask = colored_seg_mask.astype(np.float32) * 0.6 + img * 0.4
+        pil_mask = Image.fromarray(blend_mask.astype(np.uint8))
         fig = plt.figure(figsize=(18, 8))
         ax1 = fig.add_subplot(121)
         ax2 = fig.add_subplot(122)
@@ -138,18 +153,26 @@ def test(clip_vision, clip_text, dataloader, dataset, params: SegParams):
             ax.imshow(Image.fromarray(blend_img.astype(np.uint8)))
         # put the blended image and whole seg_mask
         ax = fig.add_subplot(248)
-        blend_img = colored_seg_mask.astype(np.float32) * 0.6 + img * 0.4
-        ax.imshow(Image.fromarray(blend_img.astype(np.uint8)))
+        ax.imshow(pil_mask)
+        for lbl in np.unique(seg_masks[i]):
+            ax.plot([], [],
+                    color=(palette[lbl].astype(np.float32) / 255.).tolist(),
+                    label=raw_texts[i][lbl])
+        ax.legend(bbox_to_anchor=(1, 0.2), fontsize='small')
         fig.savefig(os.path.join(vis_path, f'{i}_probs.png'))
         plt.close(fig)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CLIP for zero-shot seg')
+    parser.add_argument('--params', type=str, default='seg_params')
     parser.add_argument('--weight', type=str, default='')
-    parser.add_argument('--tau', type=bool, action='store_true')
+    parser.add_argument('--tau', action='store_true')
     args = parser.parse_args()
-    vis_path = './vis/'
+    if args.params.endswith('.py'):
+        args.params = args.params[:-3]
+    params = importlib.import_module(args.params)
+    params = params.SegParams()
+    vis_path = f'./vis/{args.params}'
     os.makedirs(vis_path, exist_ok=True)
-    params = SegParams()
     main(params)

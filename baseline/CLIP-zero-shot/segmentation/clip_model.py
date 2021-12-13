@@ -49,6 +49,7 @@ class CLIPTextEncoder(nn.Module):
         self.positional_embedding = clip_model.positional_embedding
         self.transformer = clip_model.transformer
         self.ln_final = clip_model.ln_final
+        self.text_projection = clip_model.text_projection
 
     def forward(self, text, lin_proj=True):
         """If features are used for similarity calculation, we need `lin_proj`.

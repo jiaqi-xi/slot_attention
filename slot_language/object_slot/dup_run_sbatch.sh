@@ -5,8 +5,8 @@
 
 #######################################################################
 # An example usage:
-#     GPUS=1 CPUS_PER_TASK=8 MEM_PER_CPU=6 REPEAT=3 ./dup_run_sbatch.sh \
-#       rtx6000 test-sbatch test.py ./logs/text params.py --fp16
+#     GPUS=1 CPUS_PER_TASK=8 MEM_PER_CPU=6 REPEAT=5 ./dup_run_sbatch.sh \
+#       rtx6000 test-sbatch test.py checkpoint/ params.py --fp16
 #######################################################################
 
 # read args from command line

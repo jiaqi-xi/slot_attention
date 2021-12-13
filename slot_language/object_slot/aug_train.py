@@ -69,6 +69,7 @@ def build_aug_slot_attention_model(params: SlotAttentionParams):
             contrastive_T=params.contrastive_T,
             contrastive_normalize=params.contrastive_normalize,
             contrastive_stop_grad=params.contrastive_stop_grad,
+            contrastive_same_bg=params.contrastive_same_bg,
         ),
         text_recon_dict=dict(
             use_text_recon_loss=params.use_text_recon_loss,

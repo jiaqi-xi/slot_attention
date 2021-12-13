@@ -36,7 +36,7 @@ def assert_shape(actual: Union[torch.Size, Tuple[int, ...]],
 
 def build_grid(resolution):
     ranges = [torch.linspace(0.0, 1.0, steps=res) for res in resolution]
-    grid = torch.meshgrid(*ranges)
+    grid = torch.meshgrid(*ranges, indexing='ij')
     grid = torch.stack(grid, dim=-1)
     grid = torch.reshape(grid, [resolution[0], resolution[1], -1])
     grid = grid.unsqueeze(0)

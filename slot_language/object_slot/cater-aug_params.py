@@ -51,15 +51,16 @@ class SlotAttentionParams:
 
     # contrastive loss on slot embedding
     use_contrastive_loss: bool = True
-    contrastive_mlp: Tuple[int] = ()
+    contrastive_mlp: Tuple[int] = (slot_size, slot_size)
     contrastive_T: float = 0.07
     contrastive_normalize: bool = True
     contrastive_stop_grad: bool = False
+    contrastive_same_bg: bool = False  # whether set positive for all bg slots
     contrastive_loss_w: float = 0.1
 
     # text reconstruction loss on slot embedding
     use_text_recon_loss: bool = False
-    text_recon_mlp: Tuple[int] = (64, )
+    text_recon_mlp: Tuple[int] = (slot_size, )
     text_recon_normalize: bool = False
     text_recon_loss_w: float = 0.01
 
