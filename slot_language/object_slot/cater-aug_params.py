@@ -11,7 +11,7 @@ class SlotAttentionParams:
     resolution: Tuple[int, int] = (64, 64)  # since we not using ViT
 
     # Slot Attention module params
-    num_slots: int = 7  # at most 6 obj per image/video
+    num_slots: int = 11  # at most 6 obj per image/video
     # dim of slots embedding
     slot_size: int = 128
     num_iterations: int = 2
@@ -26,8 +26,6 @@ class SlotAttentionParams:
     # encoder params
     # UNet as encoder
     use_unet: bool = False
-    # StackedResBlocks as encoder
-    use_resnet: bool = False
     # Conv encoder-decoder
     out_features: int = 64
     kernel_size: int = 5
@@ -86,12 +84,10 @@ class SlotAttentionParams:
     normalize_slots: bool = True
 
     # data
-    # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CATER/max2action/"
-    # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video_4obj"
-    # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CLEVR_viewpoint_video"
-    data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/clevr_video/train/"
+    data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CATER/max2action/"
+    # data_root: str = "/scratch/ssd004/scratch/ziyiwu/data/CATER/max2action_cameramotion/"
     pad_text: str = 'background'
-    prompt: str = 'a {color} {shape}'
+    prompt: str = 'a {size} {color} {shape}'
     # Normalization for natural img or original slot attention one
     simple_normalize: bool = True  # since we not using ViT
     center_crop: Tuple[int] = None  # (192, 192)
@@ -101,7 +97,7 @@ class SlotAttentionParams:
     gpus: int = 1
     batch_size: int = 64
     val_batch_size: int = 64
-    max_epochs: int = 16
+    max_epochs: int = 8
     num_sanity_val_steps: int = 1
     num_train_images: Optional[int] = None
     num_val_images: Optional[int] = None

@@ -18,21 +18,32 @@ class ObjAugSlotAttentionVideoLanguageMethod(
         dl = self.datamodule.val_dataloader()
         perm = torch.randperm(self.params.val_batch_size)
         idx = perm[:self.params.n_samples]
-        batch = {k: v[idx] for k, v in next(iter(dl)).items()}
-        if self.params.gpus > 0:
-            batch = {k: v.to(self.device) for k, v in batch.items()}
-        batch = dict(
-            img=torch.stack([batch['img'], batch['flipped_img']],
-                            dim=1).flatten(0, 1),
-            text=torch.stack([batch['text'], batch['text']],
-                             dim=1).flatten(0, 1))
+        data = next(iter(dl))
+        batch = {}
+        for k, v in data.items():
+            if not isinstance(v, torch.Tensor):
+                batch[k] = {k_: v_[idx] for k_, v_ in v.items()}
+            else:
+                batch[k] = v[idx]
+        stack_img = torch.stack([batch['img'], batch['flipped_img']],
+                                dim=1).flatten(0, 1).to(self.device)
+        text = batch['text']
+        if not isinstance(text, torch.Tensor):
+            stack_text = {
+                k: torch.stack([v, v], dim=1).flatten(0, 1).to(self.device)
+                for k, v in text.items()
+            }
+        else:
+            stack_text = torch.stack([text, text],
+                                     dim=1).flatten(0, 1).to(self.device)
+        batch = dict(img=stack_img, text=stack_text)
         recon_combined, recons, masks, slots = self.model.forward(batch)
 
         # combine images in a nice way so we can display all outputs in one grid, output rescaled to be between 0 and 1
         out = to_rgb_from_tensor(
             torch.cat(
                 [
-                    batch['img'].unsqueeze(1),  # original images
+                    batch['img'].unsqueeze(1).type_as(recons),  # ori images
                     recon_combined.unsqueeze(1),  # reconstructions
                     recons * masks + (1 - masks),  # each slot
                 ],

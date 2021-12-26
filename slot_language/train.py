@@ -10,7 +10,9 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 import clip
-from text_model import MLPText2Slot, TransformerText2Slot
+from vision_model import CLIPVisionEncoder
+from text_model import MLPText2Slot, TransformerText2Slot, \
+    CLIPTextEncoder, TransformerTextEncoder
 from detr_module import DETRText2Slot
 from data import CLEVRVisionLanguageCLIPDataModule
 from method import SlotAttentionVideoLanguageMethod as SlotAttentionMethod
@@ -23,7 +25,7 @@ def build_data_transforms(params: SlotAttentionParams):
     _, clip_transforms = clip.load(params.clip_arch)
     if not params.use_clip_vision:
         from torchvision.transforms import Compose, Resize, ToTensor, \
-            Normalize, Lambda, CenterCrop
+            Normalize, Lambda, CenterCrop, RandomCrop
         from torchvision.transforms import InterpolationMode
         BICUBIC = InterpolationMode.BICUBIC
 
@@ -42,6 +44,8 @@ def build_data_transforms(params: SlotAttentionParams):
         ]
         if hasattr(params, 'center_crop') and params.center_crop is not None:
             transforms.insert(0, CenterCrop(params.center_crop))
+        elif hasattr(params, 'random_crop') and params.random_crop is not None:
+            transforms.insert(0, RandomCrop(params.random_crop))
         clip_transforms = Compose(transforms)
     return clip_transforms
 
@@ -96,28 +100,54 @@ def build_text2slot_model(params: SlotAttentionParams):
     return text2slot_model
 
 
+def build_text_encoder(params: SlotAttentionParams, clip_model):
+    text_encoder = params.text_encoder if \
+        hasattr(params, 'text_encoder') else 'clip'
+    if not text_encoder:
+        return None
+    context_len = params.context_len if hasattr(params, 'context_len') else 0
+    if text_encoder == 'clip':
+        text_encoder = CLIPTextEncoder(clip_model, context_len=context_len)
+    else:
+        text_encoder = TransformerTextEncoder(
+            text_encoder, context_len=context_len)
+    return text_encoder
+
+
+def build_vision_encoder(params: SlotAttentionParams, clip_model):
+    if not params.use_clip_vision:
+        return None
+    return CLIPVisionEncoder(clip_model)
+
+
 def build_slot_attention_model(params: SlotAttentionParams):
     clip_model, _ = clip.load(params.clip_arch)
+    vision_encoder = build_vision_encoder(params, clip_model)
+    text_encoder = build_text_encoder(params, clip_model)
     text2slot_model = build_text2slot_model(params)
     model = SlotAttentionModel(
-        clip_model=clip_model,
-        use_clip_vision=params.use_clip_vision,
-        use_clip_text=params.use_text2slot,
+        clip_vision_encoder=vision_encoder,
+        text_encoder=text_encoder,
         text2slot_model=text2slot_model,
         resolution=params.resolution,
-        num_slots=params.num_slots,
-        num_iterations=params.num_iterations,
-        slot_size=params.slot_size,
-        slot_mlp_size=params.slot_mlp_size,
-        out_features=params.out_features,
-        kernel_size=params.kernel_size,
-        enc_channels=params.enc_channels,
-        dec_channels=params.dec_channels,
-        dec_resolution=params.dec_resolution,
+        slot_dict=dict(
+            num_slots=params.num_slots,
+            num_iterations=params.num_iterations,
+            slot_size=params.slot_size,
+            slot_mlp_size=params.slot_mlp_size,
+            use_bg_sep_slot=params.use_bg_sep_slot),
+        enc_dict=dict(
+            out_features=params.out_features,
+            kernel_size=params.kernel_size,
+            enc_channels=params.enc_channels,
+            enc_resolution=params.enc_resolution,
+            visual_feats_channels=params.clip_vision_channel,
+        ),
+        dec_dict=dict(
+            dec_channels=params.dec_channels,
+            dec_resolution=params.dec_resolution,
+        ),
         use_entropy_loss=params.use_entropy_loss,
-        use_bg_sep_slot=params.use_bg_sep_slot,
-        enc_resolution=params.enc_resolution,
-        visual_feats_channels=params.clip_vision_channel,
         use_word_set=params.use_text2slot
         and params.text2slot_arch in ['Transformer', 'DETR'],
         use_padding_mask=params.use_text2slot

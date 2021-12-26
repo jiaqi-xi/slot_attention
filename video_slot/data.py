@@ -231,7 +231,7 @@ class CATERVideoFrameDataset(CLEVRVideoFrameDataset):
             if True:
                 img_name = anno['image_filename'].replace(
                     'CLEVR_new', 'CATER_new')
-                image_path = os.path.join(self.data_path, f"{img_name}")
+                image_path = os.path.join(self.data_path, img_name)
                 assert os.path.exists(
                     image_path), f"{image_path} does not exist"
                 paths.append(image_path)

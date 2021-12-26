@@ -36,7 +36,7 @@ def assert_shape(actual: Union[torch.Size, Tuple[int, ...]],
 
 def build_grid(resolution):
     ranges = [torch.linspace(0.0, 1.0, steps=res) for res in resolution]
-    grid = torch.meshgrid(*ranges)
+    grid = torch.meshgrid(*ranges, indexing='ij')
     grid = torch.stack(grid, dim=-1)
     grid = torch.reshape(grid, [resolution[0], resolution[1], -1])
     grid = grid.unsqueeze(0)
@@ -148,6 +148,51 @@ def save_video(video, save_path, fps=30, codec='mp4v'):
     for i in range(video.shape[0]):
         out.write(video[i])
     out.release()
+
+
+def get_normalizer(norm, channels):
+    assert norm in ['', 'bn', 'gn', 'in']
+    if norm == '':
+        normalizer = nn.Identity()
+    elif norm == 'bn':
+        normalizer = nn.BatchNorm2d(channels)
+    elif norm == 'gn':
+        # 16 is taken from Table 3 of the GN paper
+        normalizer = nn.GroupNorm(channels // 16, channels)
+    elif norm == 'in':
+        normalizer = nn.InstanceNorm2d(channels)
+    return normalizer
+
+
+def conv_bn_relu(in_channels, out_channels, kernel_size, stride, norm=''):
+    normalizer = get_normalizer(norm, out_channels)
+    return nn.Sequential(
+        nn.Conv2d(
+            in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=kernel_size // 2,
+        ),
+        normalizer,
+        nn.ReLU(),
+    )
+
+
+def deconv_bn_relu(in_channels, out_channels, kernel_size, stride, norm=''):
+    normalizer = get_normalizer(norm, out_channels)
+    return nn.Sequential(
+        nn.ConvTranspose2d(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=kernel_size // 2,
+            output_padding=stride - 1,
+        ),
+        normalizer,
+        nn.ReLU(),
+    )
 
 
 def fc_bn_relu(in_dim, out_dim, use_bn):

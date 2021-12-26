@@ -16,6 +16,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from obj_train import build_slot_attention_model, build_data_transforms, \
     process_ckp, VideoLogCallback, ImageLogCallback
 from obj_data import ObjAugCLEVRVisionLanguageCLIPDataModule
+from cater_data import ObjAugCATERVisionLanguageCLIPDataModule
 from aug_method import ObjAugSlotAttentionVideoLanguageMethod as SlotAttentionMethod
 from aug_model import ObjAugSlotAttentionModel, SemPosSepObjAugSlotAttentionModel
 from aug_params import SlotAttentionParams
@@ -26,21 +27,27 @@ from viewpoint_data import ObjAugCLEVRVisionLanguageViewpointDataModule
 
 
 def build_data_module(params: SlotAttentionParams):
-    if '4obj' in params.data_root:
-        assert params.num_slots == 5
-    elif 'viewpoint' in params.data_root:
-        assert params.num_slots == 3
+    if 'viewpoint' in params.data_root:
+        data_module = ObjAugCLEVRVisionLanguageViewpointDataModule
+        if '4obj' in params.data_root:
+            assert params.num_slots == 5
+        else:
+            assert params.num_slots == 3
+    elif 'CATER' in params.data_root:
+        data_module = ObjAugCATERVisionLanguageCLIPDataModule
+        assert params.num_slots == 11
     else:
+        data_module = ObjAugCLEVRVisionLanguageCLIPDataModule
         assert params.num_slots == 7
     clip_transforms = build_data_transforms(params)
-    data_module = ObjAugCLEVRVisionLanguageViewpointDataModule if 'viewpoint' in \
-        params.data_root else ObjAugCLEVRVisionLanguageCLIPDataModule
     clevr_datamodule = data_module(
         data_root=params.data_root,
         train_batch_size=params.batch_size,
         val_batch_size=params.val_batch_size,
         clip_transforms=clip_transforms,
         num_workers=params.num_workers,
+        tokenizer=params.text_encoder
+        if hasattr(params, 'text_encoder') else 'clip',
         max_n_objects=params.num_slots - 1,
         prompt=params.prompt,
         shuffle_obj=params.shuffle_obj,
@@ -56,15 +63,21 @@ def build_aug_slot_attention_model(params: SlotAttentionParams):
         params.use_sempos_sep else ObjAugSlotAttentionModel
     model = model_(
         model=model,
-        use_contrastive_loss=params.use_contrastive_loss,
-        contrastive_mlp=params.contrastive_mlp,
-        contrastive_T=params.contrastive_T,
-        contrastive_normalize=params.contrastive_normalize,
-        contrastive_stop_grad=params.contrastive_stop_grad,
-        use_text_recon_loss=params.use_text_recon_loss,
-        text_recon_mlp=params.text_recon_mlp,
-        text_recon_normalize=params.text_recon_normalize,
-        use_feature_loss=params.use_feature_loss)
+        contrastive_dict=dict(
+            use_contrastive_loss=params.use_contrastive_loss,
+            contrastive_mlp=params.contrastive_mlp,
+            contrastive_T=params.contrastive_T,
+            contrastive_normalize=params.contrastive_normalize,
+            contrastive_stop_grad=params.contrastive_stop_grad,
+            contrastive_same_bg=params.contrastive_same_bg,
+        ),
+        text_recon_dict=dict(
+            use_text_recon_loss=params.use_text_recon_loss,
+            text_recon_mlp=params.text_recon_mlp,
+            text_recon_normalize=params.text_recon_normalize,
+        ),
+        feature_dict=dict(use_feature_loss=params.use_feature_loss, ),
+    )
     return model
 
 
@@ -104,8 +117,8 @@ def main(params: Optional[SlotAttentionParams] = None):
         id=logger_name)  # we assume only run one exp per one params setting
 
     # saves a file like: 'path/to/ckp/CLEVRVideo-001-100000-val=0.0032.ckpt'
-    ckp_path = "./checkpoint/" \
-        f"{args.params + '-fp16' if args.fp16 else args.params}/{SLURM_JOB_ID}"
+    # TODO: save ckp in temp folder '/checkpoint/ziyiwu/xxx/'
+    ckp_path = f"/checkpoint/ziyiwu/{SLURM_JOB_ID}"
     ckp_name = "CLEVRVideo-{epoch:03d}-{step:06d}-val_{val_recon_loss:.4f}"
     checkpoint_callback = ModelCheckpoint(
         monitor="val_recon_loss",
@@ -120,10 +133,11 @@ def main(params: Optional[SlotAttentionParams] = None):
     if os.path.exists(ckp_path):
         ckp_files = os.listdir(ckp_path)
         ckp_files = [ckp for ckp in ckp_files if ckp.startswith('CLEVRVideo')]
-        step_num = [int(ckp[26:32]) for ckp in ckp_files]
-        last_ckp = ckp_files[np.argmax(step_num)]
-        print(f'INFO: automatically detect checkpoint {last_ckp}')
-        args.weight = os.path.join(ckp_path, last_ckp)
+        if ckp_files:
+            step_num = [int(ckp[26:32]) for ckp in ckp_files]
+            last_ckp = ckp_files[np.argmax(step_num)]
+            print(f'INFO: automatically detect checkpoint {last_ckp}')
+            args.weight = os.path.join(ckp_path, last_ckp)
 
     process_ckp(args.weight)  # enable mid-epoch resuming
     trainer = Trainer(

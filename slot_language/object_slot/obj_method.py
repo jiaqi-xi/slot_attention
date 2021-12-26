@@ -14,7 +14,7 @@ class ObjSlotAttentionVideoLanguageMethod(SlotAttentionVideoLanguageMethod):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
-            self.parameters(),
+            filter(lambda p: p.requires_grad, self.parameters()),
             lr=self.params.lr,
             weight_decay=self.params.weight_decay)
 

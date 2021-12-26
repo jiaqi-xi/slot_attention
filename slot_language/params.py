@@ -35,6 +35,8 @@ class SlotAttentionParams:
     clip_text_channel: int = 512
 
     # Text2Slot model
+    text_encoder: str = 'clip'
+    context_len: int = 0
     use_text2slot: bool = True
     text2slot_arch: str = 'MLP'  # or 'Transformer' or 'DETR'
     # for MLP

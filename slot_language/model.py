@@ -4,8 +4,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from clip import CLIP
-from utils import Tensor, assert_shape, build_grid, conv_transpose_out_shape
+from utils import Tensor, assert_shape, build_grid, conv_transpose_out_shape, \
+    conv_bn_relu, deconv_bn_relu
 
 
 class SlotAttention(nn.Module):
@@ -324,60 +324,70 @@ class SlotAttentionModel(nn.Module):
 
     def __init__(
         self,
-        clip_model: CLIP,
-        use_clip_vision: bool,
-        use_clip_text: bool,
+        clip_vision_encoder: nn.Module,
+        text_encoder: nn.Module,
         text2slot_model: nn.Module,  # if None, then don't use it here
         resolution: Tuple[int, int],
-        num_slots: int,
-        num_iterations: int,
-        slot_size: int = 64,
-        slot_mlp_size: int = 128,
-        out_features: int = 64,
-        kernel_size: int = 5,
-        enc_channels: Tuple[int, ...] = (3, 64, 64, 64, 64),
-        dec_channels: Tuple[int, ...] = (64, 64, 64, 64, 64),  # 4 times up
-        dec_resolution: Tuple[int, int] = (7, 7),  # 7 * (2**5) = 224
-        use_bg_sep_slot: bool = False,
-        enc_resolution: Tuple[int, int] = (7, 7),  # output res of encoder
-        visual_feats_channels: int = 512,  # output channel of encoder
+        slot_dict=dict(
+            num_slots=7,
+            num_iterations=3,
+            slot_size=64,
+            slot_mlp_size=128,
+            use_bg_sep_slot=False,
+        ),
+        enc_dict=dict(
+            out_features=64,
+            kernel_size=5,
+            enc_channels=(3, 64, 64, 64, 64),
+            enc_resolution=(7, 7),  # output res of encoder
+            visual_feats_channels=512,  # output channel of encoder
+            enc_norm='',
+        ),
+        dec_dict=dict(
+            dec_channels=(64, 64, 64, 64, 64),  # 4 times up
+            dec_resolution=(7, 7),  # 7 * (2**5) = 224
+            dec_norm='',
+        ),
         use_word_set: bool = False,
         use_padding_mask: bool = False,
         use_entropy_loss: bool = False,
     ):
         super().__init__()
-        self.num_slots = num_slots
-        self.num_iterations = num_iterations
-        self.slot_size = slot_size
-        self.slot_mlp_size = slot_mlp_size
-        self.out_features = out_features
-
         self.resolution = resolution
-        self.kernel_size = kernel_size
-        self.enc_channels = enc_channels
-        self.dec_channels = dec_channels
-        self.dec_resolution = dec_resolution
 
-        self.enc_resolution = enc_resolution
-        self.visual_feats_channels = visual_feats_channels
-        self.use_word_set = use_word_set
-        self.use_padding_mask = use_padding_mask
+        self.num_slots = slot_dict['num_slots']
+        self.num_iterations = slot_dict['num_iterations']
+        self.slot_size = slot_dict['slot_size']
+        self.slot_mlp_size = slot_dict['slot_mlp_size']
+        self.use_bg_sep_slot = slot_dict['use_bg_sep_slot']
 
-        self.use_bg_sep_slot = use_bg_sep_slot
+        self.out_features = enc_dict['out_features']
+        self.kernel_size = enc_dict['kernel_size']
+        self.enc_channels = enc_dict['enc_channels']
+        self.enc_resolution = enc_dict['enc_resolution']
+        self.visual_feats_channels = enc_dict['visual_feats_channels']
+        self.enc_norm = enc_dict['enc_norm']
+
+        self.dec_channels = dec_dict['dec_channels']
+        self.dec_resolution = dec_dict['dec_resolution']
+        self.dec_norm = dec_dict['dec_norm']
+
+        assert not use_word_set
+        assert not use_padding_mask
 
         # Pre-trained CLIP model, we freeze it here
-        self.clip_model = clip_model.eval()
-        for p in self.clip_model.parameters():
-            p.requires_grad = False
-        self.use_clip_vision = use_clip_vision
-        self.use_clip_text = use_clip_text
-        if not self.use_clip_vision:
+        self.use_clip_vision = clip_vision_encoder is not None
+        if self.use_clip_vision:
+            self.encoder = clip_vision_encoder
+        else:
             self.enc_resolution = self.resolution
             self.visual_feats_channels = self.enc_channels[-1]
 
         # Text2Slot that generates slot embedding from text features
-        if self.use_clip_text:
-            assert text2slot_model is not None
+        self.text_encoder = text_encoder
+        # we freeze the text encoder
+        for p in self.text_encoder.parameters():
+            p.requires_grad = False
         self.text2slot_model = text2slot_model
 
         # extra loss besides reconstruction loss
@@ -400,21 +410,16 @@ class SlotAttentionModel(nn.Module):
     def _build_encoder(self):
         # we build an encoder as in original Slot Attention paper
         if not self.use_clip_vision:
-            modules = []
             # Build Encoder
-            for i in range(len(self.enc_channels) - 1):
-                modules.append(
-                    nn.Sequential(
-                        nn.Conv2d(
-                            self.enc_channels[i],
-                            out_channels=self.enc_channels[i + 1],
-                            kernel_size=self.kernel_size,
-                            stride=1,
-                            padding=self.kernel_size // 2,
-                        ),
-                        nn.ReLU(),
-                    ))
-            self.encoder = nn.Sequential(*modules)
+            self.encoder = nn.Sequential(*[
+                conv_bn_relu(
+                    self.enc_channels[i],
+                    self.enc_channels[i + 1],
+                    kernel_size=self.kernel_size,
+                    stride=1,
+                    norm=self.enc_norm)
+                for i in range(len(self.enc_channels) - 1)
+            ])
 
         # Build Encoder related modules
         self.encoder_pos_embedding = SoftPositionEmbed(
@@ -435,17 +440,12 @@ class SlotAttentionModel(nn.Module):
         stride = 2
         for i in range(len(self.dec_channels) - 1):
             modules.append(
-                nn.Sequential(
-                    nn.ConvTranspose2d(
-                        self.dec_channels[i],
-                        self.dec_channels[i + 1],
-                        kernel_size=self.kernel_size,
-                        stride=stride,
-                        padding=self.kernel_size // 2,
-                        output_padding=stride - 1,
-                    ),
-                    nn.ReLU(),
-                ))
+                deconv_bn_relu(
+                    self.dec_channels[i],
+                    self.dec_channels[i + 1],
+                    kernel_size=self.kernel_size,
+                    stride=stride,
+                    norm=self.dec_norm))
             out_size = conv_transpose_out_shape(out_size, stride, 2, 5,
                                                 stride - 1)
             if out_size == self.resolution[0]:
@@ -474,12 +474,7 @@ class SlotAttentionModel(nn.Module):
 
     def _get_encoder_out(self, img):
         """Encode image, potentially add pos enc, apply MLP."""
-        if self.use_clip_vision:
-            encoder_out = self.clip_model.encode_image(
-                img, global_feats=False, downstream=True)  # BCDD
-            encoder_out = encoder_out.type(self.dtype)
-        else:
-            encoder_out = self.encoder(img)
+        encoder_out = self.encoder(img).type(self.dtype)
         img_feats = encoder_out  # Conv features without pos_enc
         encoder_out = self.encoder_pos_embedding(encoder_out)
         # `encoder_out` has shape: [batch_size, C, height, width]
@@ -492,21 +487,10 @@ class SlotAttentionModel(nn.Module):
 
     def _get_slot_embedding(self, text):
         """Encode text, generate slot embeddings."""
-        if not self.use_clip_text:
+        if not self.text_encoder:
             # not generating slots
             return None, None
-        text_features = self.clip_model.encode_text(
-            text,
-            lin_proj=False,
-            per_token_emb=self.use_word_set,
-            return_mask=self.use_padding_mask)  # BC or BLC + padding mask
-        if self.use_padding_mask:
-            text_features, padding_mask = text_features[0].type(self.dtype), \
-                text_features[1].type(self.dtype)
-            text_features = dict(
-                text_features=text_features, padding_mask=padding_mask)
-        else:
-            text_features = text_features.type(self.dtype)
+        text_features = self.text_encoder(text).type(self.dtype)
         slot_mu, slot_log_sigma = self.text2slot_model(text_features)
         return slot_mu, slot_log_sigma, text_features
 

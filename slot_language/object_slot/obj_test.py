@@ -97,8 +97,7 @@ if __name__ == "__main__":
     parser.add_argument('--params', type=str, default='params')
     parser.add_argument('--weight', type=str, required=True)
     parser.add_argument('--test-num', type=int, default=5)
-    # TODO: I didn't find improvement using num-iter=5 as stated in the paper
-    parser.add_argument('--num-iter', type=int, default=3)
+    parser.add_argument('--num-iter', type=int, default=2)
     args = parser.parse_args()
     if args.params.endswith('.py'):
         args.params = args.params[:-3]
